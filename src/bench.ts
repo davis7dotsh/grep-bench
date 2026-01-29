@@ -9,17 +9,19 @@ const RESOURCE_CONFIG = {
   name: RESOURCE_NAME,
   url: "https://github.com/sveltejs/svelte.dev",
   branch: "main",
-  searchPath: "apps/svelte.dev/src/content",
 };
 const MODELS = [
   "gpt-5.2-codex",
   "claude-sonnet-4-5",
+  "claude-haiku-4-5",
   "gemini-3-flash",
-  "minimax-m2.1-free",
-  "glm-4.7-free",
-  "kimi-k2.5-free",
+  "minimax-m2.1",
+  "glm-4.7",
+  "kimi-k2.5",
   "qwen3-coder",
 ];
+const BENCH_ROOT = ".btca-bench";
+const BTCA_SCHEMA = "https://btca.dev/btca.schema.json";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -78,7 +80,29 @@ const waitForServer = async (baseUrl: string, timeoutMs = 30_000) => {
   throw new Error(`BTCA server did not start within ${timeoutMs}ms`);
 };
 
-const startBtcaServer = async () => {
+const sanitize = (value: string) => value.replace(/[^a-z0-9-_]+/gi, "-");
+
+const createServerWorkspace = async (model: string) => {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const dir = `${BENCH_ROOT}/${sanitize(model)}-${stamp}`;
+  const dataDir = `${dir}/data`;
+
+  await Bun.$`mkdir -p ${dir} ${dataDir}`;
+
+  const config = {
+    $schema: BTCA_SCHEMA,
+    provider: "opencode",
+    model,
+    dataDirectory: "./data",
+    resources: [RESOURCE_CONFIG],
+  };
+
+  await Bun.write(`${dir}/btca.config.jsonc`, JSON.stringify(config, null, 2));
+
+  return dir;
+};
+
+const startBtcaServer = async (cwd?: string) => {
   const btcaBin = Bun.which("btca");
   if (!btcaBin) {
     throw new Error(
@@ -94,6 +118,7 @@ const startBtcaServer = async () => {
     const proc = Bun.spawn([btcaBin, "serve", "--port", String(port)], {
       stdout: "pipe",
       stderr: "pipe",
+      cwd,
     });
 
     const baseUrl = `http://localhost:${port}`;
@@ -221,7 +246,7 @@ const createJudge = () => {
 
   return createAnthropic({
     apiKey,
-    baseURL: "https://opencode.ai/zen/v1/messages",
+    baseURL: "https://opencode.ai/zen/v1",
   });
 };
 
@@ -257,113 +282,132 @@ const judgeAnswer = async (
   return { raw: text, parsed: parseJudgeResponse(text) };
 };
 
-const runBench = async () => {
-  const runs = parseRuns(process.argv.slice(2));
-  const models = unique(MODELS);
-  const resultsPath = "bench-results.jsonl";
-  const records: string[] = [];
-
-  const server = await startBtcaServer();
-  const judge = createJudge();
+const runModelBench = async (
+  model: string,
+  runs: number,
+  judge: ReturnType<typeof createJudge>,
+) => {
+  const workspace = await createServerWorkspace(model);
+  const server = await startBtcaServer(workspace);
 
   try {
     await ensureResource(server.baseUrl);
+    await setModel(server.baseUrl, model);
 
-    const summary: Array<{
+    const records: Array<{
       model: string;
       durationMs: number;
       toolCalls: number;
       score: number | null;
+      recordLine: string;
     }> = [];
 
-    for (const model of models) {
-      for (let run = 1; run <= runs; run += 1) {
-        console.log(`Running ${model} (${run}/${runs})...`);
-        await setModel(server.baseUrl, model);
+    for (let run = 1; run <= runs; run += 1) {
+      console.log(`Running ${model} (${run}/${runs})...`);
 
-        const startedAt = new Date().toISOString();
-        const start = Date.now();
-        const response = await streamQuestion(server.baseUrl, QUESTION, [
-          RESOURCE_NAME,
-        ]);
-        const durationMs = Date.now() - start;
+      const startedAt = new Date().toISOString();
+      const start = Date.now();
+      const response = await streamQuestion(server.baseUrl, QUESTION, [
+        RESOURCE_NAME,
+      ]);
+      const durationMs = Date.now() - start;
 
-        const judged = await judgeAnswer(judge, QUESTION, response.text);
-        const score = judged.parsed?.score ?? null;
+      const judged = await judgeAnswer(judge, QUESTION, response.text);
+      const score = judged.parsed?.score ?? null;
 
-        const record = {
-          model,
-          run,
-          startedAt,
-          durationMs,
-          toolCalls: response.toolCalls,
-          toolUpdates: response.toolUpdates,
-          turns: 1,
-          tokens: { input: null, output: null },
-          costUSD: null,
-          question: QUESTION,
-          resources: [RESOURCE_NAME],
-          answer: response.text,
-          judge: {
-            score,
-            notes: judged.parsed?.notes ?? null,
-            raw: judged.raw,
-            model: "claude-haiku-4-5",
-          },
-        };
-
-        records.push(JSON.stringify(record));
-        summary.push({
-          model,
-          durationMs,
-          toolCalls: response.toolCalls,
+      const record = {
+        model,
+        run,
+        startedAt,
+        durationMs,
+        toolCalls: response.toolCalls,
+        toolUpdates: response.toolUpdates,
+        turns: 1,
+        tokens: { input: null, output: null },
+        costUSD: null,
+        question: QUESTION,
+        resources: [RESOURCE_NAME],
+        answer: response.text,
+        judge: {
           score,
-        });
-      }
+          notes: judged.parsed?.notes ?? null,
+          raw: judged.raw,
+          model: "claude-haiku-4-5",
+        },
+      };
+
+      records.push({
+        model,
+        durationMs,
+        toolCalls: response.toolCalls,
+        score,
+        recordLine: JSON.stringify(record),
+      });
     }
 
-    await Bun.write(
-      resultsPath,
-      records.length ? `${records.join("\n")}\n` : "",
-    );
-
-    console.log("\nSummary (avg per model)");
-    const grouped = summary.reduce(
-      (acc, entry) => {
-        const bucket = acc[entry.model] ?? [];
-        bucket.push(entry);
-        acc[entry.model] = bucket;
-        return acc;
-      },
-      {} as Record<string, typeof summary>,
-    );
-
-    const table = Object.entries(grouped).map(([model, entries]) => {
-      const avg = (values: number[]) =>
-        values.reduce((sum, value) => sum + value, 0) /
-        Math.max(values.length, 1);
-      const scoreValues = entries
-        .map((entry) => entry.score)
-        .filter((score): score is number => score !== null);
-
-      return {
-        model,
-        avgDurationMs: Math.round(
-          avg(entries.map((entry) => entry.durationMs)),
-        ),
-        avgToolCalls:
-          Math.round(avg(entries.map((entry) => entry.toolCalls)) * 100) / 100,
-        avgScore: scoreValues.length
-          ? Math.round(avg(scoreValues) * 100) / 100
-          : "n/a",
-      };
-    });
-
-    console.table(table);
-    console.log(`\nResults written to ${resultsPath}`);
+    return records;
   } finally {
     server.proc.kill();
   }
+};
+
+const runBench = async () => {
+  const runs = parseRuns(process.argv.slice(2));
+  const models = unique(MODELS);
+  const resultsPath = "bench-results.jsonl";
+  const judge = createJudge();
+
+  const modelResults = await Promise.all(
+    models.map((model) => runModelBench(model, runs, judge)),
+  );
+
+  const records = modelResults.flat();
+  const summary = records.map((record) => ({
+    model: record.model,
+    durationMs: record.durationMs,
+    toolCalls: record.toolCalls,
+    score: record.score,
+  }));
+
+  await Bun.write(
+    resultsPath,
+    records.length
+      ? `${records.map((record) => record.recordLine).join("\n")}\n`
+      : "",
+  );
+
+  console.log("\nSummary (avg per model)");
+  const grouped = summary.reduce(
+    (acc, entry) => {
+      const bucket = acc[entry.model] ?? [];
+      bucket.push(entry);
+      acc[entry.model] = bucket;
+      return acc;
+    },
+    {} as Record<string, typeof summary>,
+  );
+
+  const table = Object.entries(grouped).map(([model, entries]) => {
+    const avg = (values: number[]) =>
+      values.reduce((sum, value) => sum + value, 0) /
+      Math.max(values.length, 1);
+    const scoreValues = entries
+      .map((entry) => entry.score)
+      .filter((score): score is number => score !== null);
+
+    return {
+      model,
+      avgDurationMs: Math.round(avg(entries.map((entry) => entry.durationMs))),
+      avgToolCalls:
+        Math.round(avg(entries.map((entry) => entry.toolCalls)) * 100) / 100,
+      avgScore: scoreValues.length
+        ? Math.round(avg(scoreValues) * 100) / 100
+        : "n/a",
+    };
+  });
+
+  console.table(table);
+  console.log(`\nResults written to ${resultsPath}`);
 };
 
 await runBench();

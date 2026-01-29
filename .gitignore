@@ -27,6 +27,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .cache
 *.tsbuildinfo
 
+# bench cache
+.btca-bench
+
 # IntelliJ based IDEs
 .idea
 
