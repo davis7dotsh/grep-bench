@@ -438,12 +438,6 @@
           </div>
 
           <div class="chart-card">
-            <h3>Price per 1M Tokens (Input + Output)</h3>
-            <div class="eyebrow" id="cost-note"></div>
-            <canvas id="cost-chart"></canvas>
-          </div>
-
-          <div class="chart-card">
             <h3>Average Tool Calls by Model</h3>
             <canvas id="tool-chart"></canvas>
           </div>
@@ -496,8 +490,6 @@
         files: [],
         file: null,
         modelColors: new Map(),
-        modelPricing: new Map(),
-        pricingMeta: null,
         filters: {
           models: new Set(),
           tests: new Set(),
@@ -746,17 +738,11 @@
             const toolCalls = runs
               .map((record) => record.toolCalls)
               .filter((value) => typeof value === "number");
-            const pricing = state.modelPricing.get(model);
-            const total =
-              pricing && typeof pricing.total === "number"
-                ? pricing.total
-                : null;
             return {
               model,
               avgScore: average(scores),
               avgDuration: average(durations),
               avgToolCalls: average(toolCalls),
-              priceTotal: total,
               runs: runs.length,
             };
           })
@@ -832,15 +818,6 @@
           color: state.modelColors.get(entry.model) ?? "#ff5a36",
           display: formatNumber(entry.avgScore, 2),
         }));
-        const costRows = summary.map((entry) => ({
-          label: entry.model,
-          value: entry.priceTotal ?? 0,
-          color: state.modelColors.get(entry.model) ?? "#ff5a36",
-          display:
-            typeof entry.priceTotal === "number"
-              ? `$${formatNumber(entry.priceTotal, 2)}`
-              : "n/a",
-        }));
         const toolRows = summary.map((entry) => ({
           label: entry.model,
           value: entry.avgToolCalls,
@@ -854,7 +831,6 @@
           display: formatNumber(entry.avgDuration, 2),
         }));
         renderBarChart(qs("#score-chart"), scoreRows);
-        renderBarChart(qs("#cost-chart"), costRows);
         renderBarChart(qs("#tool-chart"), toolRows);
         renderBarChart(qs("#duration-chart"), durationRows);
         renderLegend(summary);
@@ -863,21 +839,13 @@
       const updateMeta = (records) => {
         const fileMeta = qs("#file-meta");
         const filterMeta = qs("#filter-meta");
-        const costNote = qs("#cost-note");
         const selectedModels = state.filters.models.size;
         const selectedTests = state.filters.tests.size;
         const failedCount = records.filter(isFailure).length;
-        const pricingStamp = state.pricingMeta?.fetchedAt
-          ? new Date(state.pricingMeta.fetchedAt).toLocaleString()
-          : null;
-        const provider = state.pricingMeta?.provider ?? "mixed";
 
         setMeta(fileMeta, [
           `<strong>File</strong> ${state.file ?? "—"}`,
           `<strong>Runs</strong> ${records.length}`,
-          pricingStamp
-            ? `<strong>Pricing</strong> ${pricingStamp} (${provider})`
-            : `<strong>Pricing</strong> unavailable`,
         ]);
 
         setMeta(filterMeta, [
@@ -885,12 +853,6 @@
           `<strong>Tests</strong> ${selectedTests}`,
           `<strong>Failures</strong> ${failedCount}`,
         ]);
-
-        if (costNote) {
-          costNote.textContent = pricingStamp
-            ? `Source: ${provider} · cache read/write not applied`
-            : "Pricing unavailable";
-        }
       };
 
       const update = () => {
@@ -907,13 +869,6 @@
         state.modelColors = createColorScale(
           uniq(state.records.map((record) => record.model)),
         );
-        state.modelPricing = new Map(
-          Object.entries(data.pricing ?? {}).map(([key, value]) => [
-            key,
-            value,
-          ]),
-        );
-        state.pricingMeta = data.pricingMeta ?? null;
         resetSelections();
         renderFilters();
         update();
