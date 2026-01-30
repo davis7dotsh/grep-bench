@@ -812,24 +812,33 @@
 
       const renderCharts = (records) => {
         const summary = buildModelSummary(records);
-        const scoreRows = summary.map((entry) => ({
-          label: entry.model,
-          value: entry.avgScore,
-          color: state.modelColors.get(entry.model) ?? "#ff5a36",
-          display: formatNumber(entry.avgScore, 2),
-        }));
-        const toolRows = summary.map((entry) => ({
-          label: entry.model,
-          value: entry.avgToolCalls,
-          color: state.modelColors.get(entry.model) ?? "#ff5a36",
-          display: formatNumber(entry.avgToolCalls, 1),
-        }));
-        const durationRows = summary.map((entry) => ({
-          label: entry.model,
-          value: entry.avgDuration,
-          color: state.modelColors.get(entry.model) ?? "#ff5a36",
-          display: formatNumber(entry.avgDuration, 2),
-        }));
+        const sortRows = (rows) =>
+          [...rows].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+
+        const scoreRows = sortRows(
+          summary.map((entry) => ({
+            label: entry.model,
+            value: entry.avgScore,
+            color: state.modelColors.get(entry.model) ?? "#ff5a36",
+            display: formatNumber(entry.avgScore, 2),
+          })),
+        );
+        const toolRows = sortRows(
+          summary.map((entry) => ({
+            label: entry.model,
+            value: entry.avgToolCalls,
+            color: state.modelColors.get(entry.model) ?? "#ff5a36",
+            display: formatNumber(entry.avgToolCalls, 1),
+          })),
+        );
+        const durationRows = sortRows(
+          summary.map((entry) => ({
+            label: entry.model,
+            value: entry.avgDuration,
+            color: state.modelColors.get(entry.model) ?? "#ff5a36",
+            display: formatNumber(entry.avgDuration, 2),
+          })),
+        );
         renderBarChart(qs("#score-chart"), scoreRows);
         renderBarChart(qs("#tool-chart"), toolRows);
         renderBarChart(qs("#duration-chart"), durationRows);
