@@ -1,15 +1,53 @@
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 
-const QUESTION =
-  "How do I do progressive enhancement with SvelteKit form actions using the form remote function? Provide a short explanation and a minimal code example.";
-const RESOURCE_NAME = "svelte";
-const RESOURCE_CONFIG = {
-  type: "git",
-  name: RESOURCE_NAME,
-  url: "https://github.com/sveltejs/svelte.dev",
-  branch: "main",
-};
+const TESTS = [
+  {
+    id: "sveltekit-form-remote",
+    question:
+      "How do I do progressive enhancement with SvelteKit form actions using the form remote function? Provide a short explanation and a minimal code example.",
+    resource: {
+      type: "git",
+      name: "svelte",
+      url: "https://github.com/sveltejs/svelte.dev",
+      branch: "main",
+      searchPath: "apps/svelte.dev",
+    },
+  },
+  {
+    id: "just-bash-agent-dir",
+    question:
+      "Using just-bash, how do I allow an agent to read/write to a specific directory? Provide the exact configuration or command needed.",
+    resource: {
+      type: "git",
+      name: "justBash",
+      url: "https://github.com/vercel-labs/just-bash",
+      branch: "main",
+    },
+  },
+  {
+    id: "effect-stream-web",
+    question:
+      "In Effect, how do I convert an Effect Stream into a standard Web ReadableStream? Provide the exact API and a minimal example.",
+    resource: {
+      type: "git",
+      name: "effect",
+      url: "https://github.com/Effect-TS/effect",
+      branch: "main",
+    },
+  },
+  {
+    id: "daytona-sandbox-autostop",
+    question:
+      "In Daytona, how long does a sandbox take to automatically stop by default? Give the default duration and where it is configured.",
+    resource: {
+      type: "git",
+      name: "daytona",
+      url: "https://github.com/daytonaio/daytona",
+      branch: "main",
+    },
+  },
+];
 const MODELS = [
   "gpt-5.2-codex",
   "claude-sonnet-4-5",
@@ -38,7 +76,18 @@ const parseRuns = (args: string[]) => {
   return toCount(positional);
 };
 
+const parseModel = (args: string[]) => {
+  const flagIndex = args.findIndex((arg) => arg === "--model" || arg === "-m");
+  if (flagIndex >= 0) return args[flagIndex + 1] ?? null;
+  return null;
+};
+
 const unique = <T>(values: T[]) => Array.from(new Set(values));
+
+const uniqueResources = (tests: typeof TESTS) =>
+  Array.from(
+    new Map(tests.map((test) => [test.resource.name, test.resource])).values(),
+  );
 
 const fetchJson = async (url: string, init?: RequestInit) => {
   const response = await fetch(url, {
@@ -82,7 +131,7 @@ const waitForServer = async (baseUrl: string, timeoutMs = 30_000) => {
 
 const sanitize = (value: string) => value.replace(/[^a-z0-9-_]+/gi, "-");
 
-const createServerWorkspace = async (model: string) => {
+const createServerWorkspace = async (model: string, tests: typeof TESTS) => {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const dir = `${BENCH_ROOT}/${sanitize(model)}-${stamp}`;
   const dataDir = `${dir}/data`;
@@ -94,7 +143,7 @@ const createServerWorkspace = async (model: string) => {
     provider: "opencode",
     model,
     dataDirectory: "./data",
-    resources: [RESOURCE_CONFIG],
+    resources: uniqueResources(tests),
   };
 
   await Bun.write(`${dir}/btca.config.jsonc`, JSON.stringify(config, null, 2));
@@ -135,17 +184,17 @@ const startBtcaServer = async (cwd?: string) => {
   throw new Error("Unable to start btca server.");
 };
 
-const ensureResource = async (baseUrl: string) => {
+const ensureResource = async (baseUrl: string, resource: { name: string }) => {
   const data = await fetchJson(`${baseUrl}/resources`);
   const resources = Array.isArray(data) ? data : (data?.resources ?? []);
   const exists = resources.some(
-    (resource: { name?: string }) => resource.name === RESOURCE_NAME,
+    (item: { name?: string }) => item.name === resource.name,
   );
 
   if (!exists) {
     await fetchJson(`${baseUrl}/config/resources`, {
       method: "POST",
-      body: JSON.stringify(RESOURCE_CONFIG),
+      body: JSON.stringify(resource),
     });
   }
 };
@@ -161,6 +210,15 @@ const safeJson = (value: string) => {
     return JSON.parse(value);
   } catch {
     return null;
+  }
+};
+
+const formatError = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
   }
 };
 
@@ -255,7 +313,7 @@ const parseJudgeResponse = (raw: string) => {
   if (!match) return null;
   const parsed = safeJson(match[0]);
   if (!parsed || typeof parsed.score !== "number") return null;
-  return parsed as { score: number; notes?: string };
+  return parsed as { score: number; clarity?: number; notes?: string };
 };
 
 const judgeAnswer = async (
@@ -265,8 +323,9 @@ const judgeAnswer = async (
 ) => {
   const system = [
     "You are a strict evaluator.",
-    "Score accuracy 0-4 using this rubric: 0 incorrect, 1 partial, 2 mostly correct, 3 correct and complete, 4 correct and cites precise API names or file references.",
-    'Output JSON only: {"score": number, "notes": string}.',
+    "Score usefulness 0-4 based on whether the answer is good enough to implement/solve the problem (0 incorrect, 1 partial, 2 mostly correct, 3 correct and complete, 4 correct and includes precise API names or file references).",
+    "Score clarity 0-4 based on how clear and actionable the answer is.",
+    'Output JSON only: {"score": number, "clarity": number, "notes": string}.',
   ].join(" ");
 
   const prompt = `Question:\n${question}\n\nAnswer:\n${answer}\n\nReturn JSON only.`;
@@ -286,63 +345,122 @@ const runModelBench = async (
   model: string,
   runs: number,
   judge: ReturnType<typeof createJudge>,
+  tests: typeof TESTS,
 ) => {
-  const workspace = await createServerWorkspace(model);
+  const workspace = await createServerWorkspace(model, tests);
   const server = await startBtcaServer(workspace);
 
   try {
-    await ensureResource(server.baseUrl);
+    await Promise.all(
+      uniqueResources(tests).map((resource) =>
+        ensureResource(server.baseUrl, resource),
+      ),
+    );
     await setModel(server.baseUrl, model);
 
     const records: Array<{
       model: string;
-      durationMs: number;
+      durationSec: number;
       toolCalls: number;
       score: number | null;
+      clarity: number | null;
+      failed: boolean;
       recordLine: string;
     }> = [];
 
-    for (let run = 1; run <= runs; run += 1) {
-      console.log(`Running ${model} (${run}/${runs})...`);
+    for (const test of tests) {
+      for (let run = 1; run <= runs; run += 1) {
+        console.log(`Running ${model} ${test.id} (${run}/${runs})...`);
 
-      const startedAt = new Date().toISOString();
-      const start = Date.now();
-      const response = await streamQuestion(server.baseUrl, QUESTION, [
-        RESOURCE_NAME,
-      ]);
-      const durationMs = Date.now() - start;
+        const startedAt = new Date().toISOString();
+        const start = Date.now();
+        try {
+          const response = await streamQuestion(server.baseUrl, test.question, [
+            test.resource.name,
+          ]);
+          const durationSec =
+            Math.round(((Date.now() - start) / 1000) * 100) / 100;
 
-      const judged = await judgeAnswer(judge, QUESTION, response.text);
-      const score = judged.parsed?.score ?? null;
+          const judged = await judgeAnswer(judge, test.question, response.text);
+          const score = judged.parsed?.score ?? null;
+          const clarity = judged.parsed?.clarity ?? null;
 
-      const record = {
-        model,
-        run,
-        startedAt,
-        durationMs,
-        toolCalls: response.toolCalls,
-        toolUpdates: response.toolUpdates,
-        turns: 1,
-        tokens: { input: null, output: null },
-        costUSD: null,
-        question: QUESTION,
-        resources: [RESOURCE_NAME],
-        answer: response.text,
-        judge: {
-          score,
-          notes: judged.parsed?.notes ?? null,
-          raw: judged.raw,
-          model: "claude-haiku-4-5",
-        },
-      };
+          const record = {
+            model,
+            testId: test.id,
+            run,
+            startedAt,
+            durationSec,
+            toolCalls: response.toolCalls,
+            toolUpdates: response.toolUpdates,
+            failedToolCalls: 0,
+            turns: 1,
+            tokens: { input: null, output: null },
+            costUSD: null,
+            question: test.question,
+            resources: [test.resource.name],
+            answer: response.text,
+            error: null,
+            judge: {
+              score,
+              clarity,
+              notes: judged.parsed?.notes ?? null,
+              raw: judged.raw,
+              model: "claude-haiku-4-5",
+            },
+          };
 
-      records.push({
-        model,
-        durationMs,
-        toolCalls: response.toolCalls,
-        score,
-        recordLine: JSON.stringify(record),
-      });
+          records.push({
+            model,
+            durationSec,
+            toolCalls: response.toolCalls,
+            score,
+            clarity,
+            failed: false,
+            recordLine: JSON.stringify(record),
+          });
+        } catch (error) {
+          const durationSec =
+            Math.round(((Date.now() - start) / 1000) * 100) / 100;
+          const message = formatError(error);
+          const record = {
+            model,
+            testId: test.id,
+            run,
+            startedAt,
+            durationSec,
+            toolCalls: 0,
+            toolUpdates: 0,
+            failedToolCalls: 1,
+            turns: 1,
+            tokens: { input: null, output: null },
+            costUSD: null,
+            question: test.question,
+            resources: [test.resource.name],
+            answer: "",
+            error: message,
+            judge: {
+              score: null,
+              clarity: null,
+              notes: null,
+              raw: "",
+              model: "claude-haiku-4-5",
+            },
+          };
+
+          console.error(`[${model}] ${test.id} run ${run} failed: ${message}`);
+
+          records.push({
+            model,
+            durationSec,
+            toolCalls: 0,
+            score: null,
+            clarity: null,
+            failed: true,
+            recordLine: JSON.stringify(record),
+          });
+        }
+      }
     }
 
     return records;
@@ -351,63 +469,97 @@ const runModelBench = async (
   }
 };
 
+const buildTimestamp = () => new Date().toISOString().replace(/[:.]/g, "-");
+
+const ensureResultsDir = async () => {
+  await Bun.$`mkdir -p results`;
+  return "results";
+};
+
 const runBench = async () => {
-  const runs = parseRuns(process.argv.slice(2));
-  const models = unique(MODELS);
-  const resultsPath = "bench-results.jsonl";
+  const args = process.argv.slice(2);
+  const runs = parseRuns(args);
+  const modelOverride = parseModel(args);
+  const models = modelOverride ? [modelOverride] : unique(MODELS);
+  const resultsDir = await ensureResultsDir();
+  const resultsPath = `${resultsDir}/bench-results-${buildTimestamp()}.jsonl`;
   const judge = createJudge();
 
   const modelResults = await Promise.all(
-    models.map((model) => runModelBench(model, runs, judge)),
+    models.map((model) => runModelBench(model, runs, judge, TESTS)),
   );
 
   const records = modelResults.flat();
   const summary = records.map((record) => ({
+    testId: record.recordLine ? JSON.parse(record.recordLine).testId : null,
     model: record.model,
-    durationMs: record.durationMs,
+    durationSec: record.durationSec,
     toolCalls: record.toolCalls,
     score: record.score,
+    clarity: record.clarity,
+    failed: record.failed,
   }));
 
-  await Bun.write(
-    resultsPath,
-    records.length
-      ? `${records.map((record) => record.recordLine).join("\n")}\n`
-      : "",
-  );
+  if (!modelOverride) {
+    await Bun.write(
+      resultsPath,
+      records.length
+        ? `${records.map((record) => record.recordLine).join("\n")}\n`
+        : "",
+    );
+  }
 
-  console.log("\nSummary (avg per model)");
   const grouped = summary.reduce(
     (acc, entry) => {
-      const bucket = acc[entry.model] ?? [];
+      const key = modelOverride ? (entry.testId ?? "unknown") : entry.model;
+      const bucket = acc[key] ?? [];
       bucket.push(entry);
-      acc[entry.model] = bucket;
+      acc[key] = bucket;
       return acc;
     },
     {} as Record<string, typeof summary>,
   );
 
-  const table = Object.entries(grouped).map(([model, entries]) => {
+  const table = Object.entries(grouped).map(([groupKey, entries]) => {
     const avg = (values: number[]) =>
       values.reduce((sum, value) => sum + value, 0) /
       Math.max(values.length, 1);
     const scoreValues = entries
       .map((entry) => entry.score)
       .filter((score): score is number => score !== null);
+    const clarityValues = entries
+      .map((entry) => entry.clarity)
+      .filter((clarity): clarity is number => clarity !== null);
 
     return {
-      model,
-      avgDurationMs: Math.round(avg(entries.map((entry) => entry.durationMs))),
+      [modelOverride ? "testId" : "model"]: groupKey,
+      avgDurationSec:
+        Math.round(avg(entries.map((entry) => entry.durationSec)) * 100) / 100,
       avgToolCalls:
         Math.round(avg(entries.map((entry) => entry.toolCalls)) * 100) / 100,
       avgScore: scoreValues.length
         ? Math.round(avg(scoreValues) * 100) / 100
         : "n/a",
+      avgClarity: clarityValues.length
+        ? Math.round(avg(clarityValues) * 100) / 100
+        : "n/a",
+      failedRuns: entries.filter((entry) => entry.failed).length,
     };
   });
 
+  if (modelOverride) {
+    console.log(`\nResults for ${modelOverride}`);
+  } else {
+    console.log("\nSummary (avg per model)");
+  }
   console.table(table);
-  console.log(`\nResults written to ${resultsPath}`);
+  if (!modelOverride) console.log(`\nResults written to ${resultsPath}`);
 };
 
-await runBench();
+try {
+  await runBench();
+  process.exit(0);
+} catch (error) {
+  console.error(error);
+  process.exit(1);
+}
