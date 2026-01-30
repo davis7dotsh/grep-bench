@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grep Bench — Results Observatory</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;700&family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600&family=IBM+Plex+Mono:wght@400;600&display=swap");
+
+      :root {
+        color-scheme: light;
+        --ink: #1c1b19;
+        --ink-soft: #3a3732;
+        --muted: #6c675f;
+        --paper: #f8f1e6;
+        --paper-2: #efe4d3;
+        --accent: #ff5a36;
+        --accent-2: #0a6c7b;
+        --accent-3: #f7c843;
+        --grid: rgba(28, 27, 25, 0.12);
+        --shadow: rgba(28, 27, 25, 0.15);
+        --radius-lg: 24px;
+        --radius-md: 16px;
+        --radius-sm: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Newsreader", "Times New Roman", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(
+            circle at top left,
+            rgba(255, 90, 54, 0.18),
+            transparent 45%
+          ),
+          radial-gradient(
+            circle at 90% 10%,
+            rgba(10, 108, 123, 0.2),
+            transparent 40%
+          ),
+          linear-gradient(120deg, #f4ecdf 0%, #f9f2e8 40%, #f2e7d3 100%);
+        min-height: 100vh;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: repeating-linear-gradient(
+          45deg,
+          rgba(28, 27, 25, 0.04),
+          rgba(28, 27, 25, 0.04) 1px,
+          transparent 1px,
+          transparent 8px
+        );
+        pointer-events: none;
+        mix-blend-mode: multiply;
+        opacity: 0.7;
+      }
+
+      .app {
+        position: relative;
+        z-index: 1;
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 32px 28px 48px;
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+      }
+
+      .hero {
+        position: relative;
+        border-radius: var(--radius-lg);
+        padding: 32px;
+        background: linear-gradient(140deg, #fff8f1 0%, #f5e9da 60%);
+        box-shadow: 0 18px 40px var(--shadow);
+        overflow: hidden;
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          circle at 80% 30%,
+          rgba(255, 90, 54, 0.12),
+          transparent 55%
+        );
+        opacity: 0.8;
+        pointer-events: none;
+      }
+
+      .hero-top {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        align-items: center;
+        justify-content: space-between;
+        position: relative;
+        z-index: 1;
+      }
+
+      .eyebrow {
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      h1 {
+        margin: 6px 0 12px;
+        font-family: "Unbounded", "Arial Black", sans-serif;
+        font-size: clamp(2.2rem, 3vw, 3.2rem);
+        letter-spacing: -0.02em;
+      }
+
+      .hero p {
+        max-width: 680px;
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 1.05rem;
+        line-height: 1.6;
+      }
+
+      .meta-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 220px;
+      }
+
+      .meta-card {
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: var(--radius-md);
+        padding: 12px 16px;
+        border: 1px solid rgba(28, 27, 25, 0.08);
+        backdrop-filter: blur(6px);
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 0.86rem;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .hero-ribbon {
+        position: absolute;
+        top: 18px;
+        right: -38px;
+        background: var(--accent);
+        color: #fffaf5;
+        padding: 10px 68px;
+        font-family: "Unbounded", "Arial Black", sans-serif;
+        letter-spacing: 0.04em;
+        transform: rotate(12deg);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        box-shadow: 0 12px 24px rgba(255, 90, 54, 0.3);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+        gap: 22px;
+      }
+
+      .panel {
+        background: rgba(255, 255, 255, 0.75);
+        border-radius: var(--radius-lg);
+        padding: 18px 18px 20px;
+        border: 1px solid rgba(28, 27, 25, 0.08);
+        box-shadow: 0 18px 30px rgba(28, 27, 25, 0.08);
+      }
+
+      .panel h2 {
+        margin: 0 0 10px;
+        font-family: "Unbounded", "Arial Black", sans-serif;
+        font-size: 1.1rem;
+      }
+
+      .filters {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      label {
+        font-size: 0.95rem;
+        color: var(--ink-soft);
+      }
+
+      select,
+      input[type="text"],
+      input[type="range"] {
+        width: 100%;
+        margin-top: 6px;
+        padding: 10px 12px;
+        border-radius: var(--radius-sm);
+        border: 1px solid rgba(28, 27, 25, 0.15);
+        background: #fffaf4;
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 0.88rem;
+      }
+
+      .toggle-group {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .toggle {
+        flex: 1 1 auto;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #fffaf4;
+        border: 1px solid rgba(28, 27, 25, 0.12);
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+      }
+
+      .toggle.active {
+        background: var(--accent-2);
+        color: #fef5e8;
+        border-color: transparent;
+      }
+
+      .chip-group {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .chip-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 0.78rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .chip-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .chip-actions button {
+        border: none;
+        background: transparent;
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 0.72rem;
+        color: var(--accent-2);
+        cursor: pointer;
+      }
+
+      .chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(28, 27, 25, 0.12);
+        background: #fffaf4;
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 0.78rem;
+        cursor: pointer;
+      }
+
+      .chip input {
+        accent-color: var(--accent);
+      }
+
+      .dashboard {
+        display: grid;
+        gap: 18px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+      }
+
+      .stat-card {
+        background: rgba(255, 255, 255, 0.8);
+        border-radius: var(--radius-md);
+        padding: 12px 16px;
+        border: 1px solid rgba(28, 27, 25, 0.08);
+      }
+
+      .stat-card span {
+        display: block;
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .stat-card strong {
+        font-family: "Unbounded", "Arial Black", sans-serif;
+        font-size: 1.4rem;
+      }
+
+      .chart-card {
+        padding: 16px;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(28, 27, 25, 0.1);
+        background: #fffaf4;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .chart-card h3 {
+        margin: 0;
+        font-family: "Unbounded", "Arial Black", sans-serif;
+        font-size: 1rem;
+      }
+
+      .chart-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 0.72rem;
+        color: var(--ink-soft);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .legend-swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        box-shadow: 0 0 0 2px rgba(28, 27, 25, 0.1);
+      }
+
+      canvas {
+        width: 100%;
+        height: 240px;
+        border-radius: var(--radius-md);
+        background: linear-gradient(180deg, #ffffff 0%, #f7efe2 100%);
+        border: 1px dashed rgba(28, 27, 25, 0.15);
+      }
+
+      @media (max-width: 980px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section class="hero">
+        <div class="hero-ribbon">Bench Feed</div>
+        <div class="hero-top">
+          <div>
+            <div class="eyebrow">Grep Bench Observatory</div>
+            <h1>Model Runs, Filtered and Focused</h1>
+            <p>
+              Track accuracy, clarity, latency, and tool usage across bench
+              runs. Slice by model or test, then skim the critical misses.
+            </p>
+          </div>
+          <div class="meta-stack">
+            <div class="meta-card" id="file-meta">
+              <div>Loading latest results…</div>
+            </div>
+            <div class="meta-card" id="filter-meta">
+              <div>Filters ready</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <aside class="panel">
+          <h2>Filters</h2>
+          <div class="filters">
+            <label>
+              Results file
+              <select id="file-select"></select>
+            </label>
+            <div class="chip-group" id="model-group"></div>
+            <div class="chip-group" id="test-group"></div>
+            <label>
+              Search (model/test)
+              <input id="search-input" type="text" placeholder="e.g. gpt-5" />
+            </label>
+            <label>
+              Minimum score
+              <input id="score-min" type="range" min="0" max="4" step="0.5" />
+              <div id="score-label" class="eyebrow">0+</div>
+            </label>
+            <div>
+              <div class="eyebrow">Show failures</div>
+              <div class="toggle-group" id="fail-toggles">
+                <button class="toggle" data-mode="all">All</button>
+                <button class="toggle" data-mode="only">Only Failures</button>
+                <button class="toggle" data-mode="hide">Hide Failures</button>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <section class="dashboard">
+          <div class="stats" id="stats"></div>
+
+          <div class="chart-card">
+            <h3>Average Score by Model</h3>
+            <div class="chart-legend" id="model-legend"></div>
+            <canvas id="score-chart"></canvas>
+          </div>
+
+          <div class="chart-card">
+            <h3>Price per 1M Tokens (Input + Output)</h3>
+            <div class="eyebrow" id="cost-note"></div>
+            <canvas id="cost-chart"></canvas>
+          </div>
+
+          <div class="chart-card">
+            <h3>Average Tool Calls by Model</h3>
+            <canvas id="tool-chart"></canvas>
+          </div>
+
+          <div class="chart-card">
+            <h3>Average Duration (s) by Model</h3>
+            <canvas id="duration-chart"></canvas>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module">
+      const api = {
+        files: () => fetch("/api/files").then((res) => res.json()),
+        results: (file) =>
+          fetch(`/api/results?file=${encodeURIComponent(file ?? "")}`).then(
+            (res) => res.json(),
+          ),
+      };
+
+      const qs = (selector, root = document) => root.querySelector(selector);
+      const qsa = (selector, root = document) =>
+        Array.from(root.querySelectorAll(selector));
+      const formatNumber = (value, digits = 2) =>
+        Number.isFinite(value) ? value.toFixed(digits) : "—";
+      const uniq = (values) => Array.from(new Set(values));
+      const palette = [
+        "#ff5a36",
+        "#0a6c7b",
+        "#f7c843",
+        "#4b6b41",
+        "#1f4d6b",
+        "#b8512f",
+        "#7b3f00",
+        "#2f4858",
+        "#a36f3a",
+        "#516b54",
+      ];
+      const createColorScale = (models) =>
+        new Map(
+          models.map((model, index) => [
+            model,
+            palette[index % palette.length],
+          ]),
+        );
+
+      const state = {
+        records: [],
+        files: [],
+        file: null,
+        modelColors: new Map(),
+        modelPricing: new Map(),
+        pricingMeta: null,
+        filters: {
+          models: new Set(),
+          tests: new Set(),
+          search: "",
+          minScore: 0,
+          failMode: "all",
+        },
+      };
+
+      const setMeta = (node, lines) => {
+        node.innerHTML = lines.map((line) => `<div>${line}</div>`).join("");
+      };
+
+      const setActiveToggle = (mode) => {
+        qsa("#fail-toggles .toggle").forEach((button) => {
+          button.classList.toggle("active", button.dataset.mode === mode);
+        });
+      };
+
+      const resetSelections = () => {
+        state.filters.models = new Set(uniq(state.records.map((r) => r.model)));
+        state.filters.tests = new Set(uniq(state.records.map((r) => r.testId)));
+      };
+
+      const isFailure = (record) =>
+        Boolean(record.error) || (record.failedToolCalls ?? 0) > 0;
+
+      const scoreValue = (record) => record.judge?.score ?? null;
+      const clarityValue = (record) => record.judge?.clarity ?? null;
+
+      const applyFilters = (records) => {
+        const { models, tests, search, minScore, failMode } = state.filters;
+        const query = search.trim().toLowerCase();
+
+        return records.filter((record) => {
+          const hasModel = models.has(record.model);
+          const hasTest = tests.has(record.testId);
+          if (!hasModel || !hasTest) return false;
+
+          if (query) {
+            const hay = `${record.model} ${record.testId}`.toLowerCase();
+            if (!hay.includes(query)) return false;
+          }
+
+          const score = scoreValue(record);
+          if (Number.isFinite(minScore)) {
+            if (score !== null && score < minScore) return false;
+            if (score === null && minScore > 0) return false;
+          }
+
+          const failed = isFailure(record);
+          if (failMode === "only" && !failed) return false;
+          if (failMode === "hide" && failed) return false;
+
+          return true;
+        });
+      };
+
+      const average = (values) =>
+        values.length
+          ? values.reduce((sum, value) => sum + value, 0) / values.length
+          : 0;
+
+      const median = (values) => {
+        if (!values.length) return 0;
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2
+          ? sorted[mid]
+          : (sorted[mid - 1] + sorted[mid]) / 2;
+      };
+
+      const buildStats = (records) => {
+        const scores = records
+          .map(scoreValue)
+          .filter((value) => typeof value === "number");
+        const clarities = records
+          .map(clarityValue)
+          .filter((value) => typeof value === "number");
+        const durations = records
+          .map((record) => record.durationSec)
+          .filter((value) => typeof value === "number");
+        const toolCalls = records
+          .map((record) => record.toolCalls)
+          .filter((value) => typeof value === "number");
+        const failures = records.filter(isFailure).length;
+
+        return [
+          {
+            label: "Runs",
+            value: records.length,
+          },
+          {
+            label: "Avg Score",
+            value: formatNumber(average(scores), 2),
+          },
+          {
+            label: "Avg Clarity",
+            value: formatNumber(average(clarities), 2),
+          },
+          {
+            label: "Median Latency (s)",
+            value: formatNumber(median(durations), 2),
+          },
+          {
+            label: "Avg Tool Calls",
+            value: formatNumber(average(toolCalls), 1),
+          },
+          {
+            label: "Failures",
+            value: failures,
+          },
+        ];
+      };
+
+      const renderStats = (records) => {
+        const stats = buildStats(records);
+        const container = qs("#stats");
+        container.innerHTML = stats
+          .map(
+            (stat) => `
+          <div class="stat-card">
+            <span>${stat.label}</span>
+            <strong>${stat.value}</strong>
+          </div>
+        `,
+          )
+          .join("");
+      };
+
+      const renderChipGroup = ({
+        container,
+        title,
+        items,
+        selected,
+        onChange,
+      }) => {
+        container.innerHTML = "";
+
+        const header = document.createElement("div");
+        header.className = "chip-header";
+        header.innerHTML = `<span>${title}</span>`;
+
+        const actions = document.createElement("div");
+        actions.className = "chip-actions";
+
+        const selectAll = document.createElement("button");
+        selectAll.type = "button";
+        selectAll.textContent = "All";
+        selectAll.addEventListener("click", () => {
+          selected.clear();
+          items.forEach((item) => selected.add(item));
+          onChange();
+        });
+
+        const clear = document.createElement("button");
+        clear.type = "button";
+        clear.textContent = "Clear";
+        clear.addEventListener("click", () => {
+          selected.clear();
+          onChange();
+        });
+
+        actions.append(selectAll, clear);
+        header.append(actions);
+
+        const list = document.createElement("div");
+        list.className = "chip-list";
+
+        items.forEach((item) => {
+          const chip = document.createElement("label");
+          chip.className = "chip";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = selected.has(item);
+          input.addEventListener("change", () => {
+            if (input.checked) selected.add(item);
+            else selected.delete(item);
+            onChange();
+          });
+
+          const text = document.createElement("span");
+          text.textContent = item;
+
+          chip.append(input, text);
+          list.append(chip);
+        });
+
+        container.append(header, list);
+      };
+
+      const renderFilters = () => {
+        const models = uniq(state.records.map((record) => record.model));
+        const tests = uniq(state.records.map((record) => record.testId));
+
+        const modelContainer = qs("#model-group");
+        const testContainer = qs("#test-group");
+
+        renderChipGroup({
+          container: modelContainer,
+          title: "Models",
+          items: models,
+          selected: state.filters.models,
+          onChange: update,
+        });
+
+        renderChipGroup({
+          container: testContainer,
+          title: "Tests",
+          items: tests,
+          selected: state.filters.tests,
+          onChange: update,
+        });
+      };
+
+      const renderFileSelect = () => {
+        const select = qs("#file-select");
+        select.innerHTML = state.files
+          .map((file) => `<option value="${file.name}">${file.name}</option>`)
+          .join("");
+
+        if (state.file) select.value = state.file;
+
+        select.addEventListener("change", async (event) => {
+          const target = event.target;
+          await loadResults(target.value);
+        });
+      };
+
+      const buildModelSummary = (records) => {
+        const grouped = records.reduce((acc, record) => {
+          const key = record.model;
+          acc[key] = acc[key] ?? [];
+          acc[key].push(record);
+          return acc;
+        }, {});
+
+        return Object.entries(grouped)
+          .map(([model, runs]) => {
+            const scores = runs
+              .map(scoreValue)
+              .filter((value) => typeof value === "number");
+            const durations = runs
+              .map((record) => record.durationSec)
+              .filter((value) => typeof value === "number");
+            const toolCalls = runs
+              .map((record) => record.toolCalls)
+              .filter((value) => typeof value === "number");
+            const pricing = state.modelPricing.get(model);
+            const total =
+              pricing && typeof pricing.total === "number"
+                ? pricing.total
+                : null;
+            return {
+              model,
+              avgScore: average(scores),
+              avgDuration: average(durations),
+              avgToolCalls: average(toolCalls),
+              priceTotal: total,
+              runs: runs.length,
+            };
+          })
+          .sort((a, b) => b.avgScore - a.avgScore);
+      };
+
+      const renderLegend = (summary) => {
+        const legend = qs("#model-legend");
+        if (!legend) return;
+        legend.innerHTML = summary
+          .map((entry) => {
+            const color = state.modelColors.get(entry.model) ?? "#ff5a36";
+            return `
+              <div class="legend-item">
+                <span class="legend-swatch" style="background:${color}"></span>
+                <span>${entry.model}</span>
+              </div>
+            `;
+          })
+          .join("");
+      };
+
+      const scaleCanvas = (canvas) => {
+        const { width, height } = canvas.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        return { ctx, width, height };
+      };
+
+      const splitLabel = (label) => {
+        const parts = String(label).split("-");
+        if (parts.length <= 2) return [label];
+        return [parts.slice(0, 2).join("-"), parts.slice(2).join("-")];
+      };
+
+      const renderBarChart = (canvas, rows) => {
+        const { ctx, width, height } = scaleCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+        if (!rows.length) return;
+
+        const max = Math.max(...rows.map((row) => row.value), 1);
+        const pad = 40;
+        const barWidth = (width - pad * 2) / rows.length;
+
+        rows.forEach((row, index) => {
+          const barHeight = (row.value / max) * (height - pad * 2);
+          const x = pad + index * barWidth;
+          const y = height - pad - barHeight;
+
+          ctx.fillStyle = row.color ?? "#ff5a36";
+          ctx.fillRect(x + 6, y, barWidth - 12, barHeight);
+
+          ctx.fillStyle = "#1c1b19";
+          ctx.font = "11px IBM Plex Mono";
+          splitLabel(row.label).forEach((line, lineIndex) => {
+            ctx.fillText(line, x + 6, height - pad + 14 + lineIndex * 12);
+          });
+
+          ctx.fillStyle = "#3a3732";
+          ctx.font = "11px IBM Plex Mono";
+          ctx.fillText(row.display ?? formatNumber(row.value, 2), x + 6, y - 6);
+        });
+      };
+
+      const renderCharts = (records) => {
+        const summary = buildModelSummary(records);
+        const scoreRows = summary.map((entry) => ({
+          label: entry.model,
+          value: entry.avgScore,
+          color: state.modelColors.get(entry.model) ?? "#ff5a36",
+          display: formatNumber(entry.avgScore, 2),
+        }));
+        const costRows = summary.map((entry) => ({
+          label: entry.model,
+          value: entry.priceTotal ?? 0,
+          color: state.modelColors.get(entry.model) ?? "#ff5a36",
+          display:
+            typeof entry.priceTotal === "number"
+              ? `$${formatNumber(entry.priceTotal, 2)}`
+              : "n/a",
+        }));
+        const toolRows = summary.map((entry) => ({
+          label: entry.model,
+          value: entry.avgToolCalls,
+          color: state.modelColors.get(entry.model) ?? "#ff5a36",
+          display: formatNumber(entry.avgToolCalls, 1),
+        }));
+        const durationRows = summary.map((entry) => ({
+          label: entry.model,
+          value: entry.avgDuration,
+          color: state.modelColors.get(entry.model) ?? "#ff5a36",
+          display: formatNumber(entry.avgDuration, 2),
+        }));
+        renderBarChart(qs("#score-chart"), scoreRows);
+        renderBarChart(qs("#cost-chart"), costRows);
+        renderBarChart(qs("#tool-chart"), toolRows);
+        renderBarChart(qs("#duration-chart"), durationRows);
+        renderLegend(summary);
+      };
+
+      const updateMeta = (records) => {
+        const fileMeta = qs("#file-meta");
+        const filterMeta = qs("#filter-meta");
+        const costNote = qs("#cost-note");
+        const selectedModels = state.filters.models.size;
+        const selectedTests = state.filters.tests.size;
+        const failedCount = records.filter(isFailure).length;
+        const pricingStamp = state.pricingMeta?.fetchedAt
+          ? new Date(state.pricingMeta.fetchedAt).toLocaleString()
+          : null;
+        const provider = state.pricingMeta?.provider ?? "mixed";
+
+        setMeta(fileMeta, [
+          `<strong>File</strong> ${state.file ?? "—"}`,
+          `<strong>Runs</strong> ${records.length}`,
+          pricingStamp
+            ? `<strong>Pricing</strong> ${pricingStamp} (${provider})`
+            : `<strong>Pricing</strong> unavailable`,
+        ]);
+
+        setMeta(filterMeta, [
+          `<strong>Models</strong> ${selectedModels}`,
+          `<strong>Tests</strong> ${selectedTests}`,
+          `<strong>Failures</strong> ${failedCount}`,
+        ]);
+
+        if (costNote) {
+          costNote.textContent = pricingStamp
+            ? `Source: ${provider} · cache read/write not applied`
+            : "Pricing unavailable";
+        }
+      };
+
+      const update = () => {
+        const filtered = applyFilters(state.records);
+        renderStats(filtered);
+        renderCharts(filtered);
+        updateMeta(filtered);
+      };
+
+      const loadResults = async (file) => {
+        const data = await api.results(file);
+        state.records = data.records ?? [];
+        state.file = data.file ?? null;
+        state.modelColors = createColorScale(
+          uniq(state.records.map((record) => record.model)),
+        );
+        state.modelPricing = new Map(
+          Object.entries(data.pricing ?? {}).map(([key, value]) => [
+            key,
+            value,
+          ]),
+        );
+        state.pricingMeta = data.pricingMeta ?? null;
+        resetSelections();
+        renderFilters();
+        update();
+      };
+
+      const init = async () => {
+        const data = await api.files();
+        state.files = data.files ?? [];
+        if (!state.files.length) {
+          setMeta(qs("#file-meta"), ["No results found in /results."]);
+          return;
+        }
+
+        state.file = state.files[0].name;
+        renderFileSelect();
+        await loadResults(state.file);
+
+        qs("#search-input").addEventListener("input", (event) => {
+          state.filters.search = event.target.value;
+          update();
+        });
+
+        const scoreInput = qs("#score-min");
+        const scoreLabel = qs("#score-label");
+        scoreInput.value = state.filters.minScore;
+        scoreLabel.textContent = `${state.filters.minScore}+`;
+        scoreInput.addEventListener("input", (event) => {
+          state.filters.minScore = Number(event.target.value);
+          scoreLabel.textContent = `${state.filters.minScore}+`;
+          update();
+        });
+
+        qsa("#fail-toggles .toggle").forEach((button) => {
+          button.addEventListener("click", () => {
+            state.filters.failMode = button.dataset.mode;
+            setActiveToggle(state.filters.failMode);
+            update();
+          });
+        });
+
+        setActiveToggle(state.filters.failMode);
+        window.addEventListener("resize", update);
+      };
+
+      init();
+    </script>
+  </body>
+</html>
