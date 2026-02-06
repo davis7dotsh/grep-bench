@@ -255,14 +255,25 @@ const addPricing = async (records: unknown[]) => {
     };
 
   const entries = flattenModels(data as Record<string, unknown>);
-  const opencodeEntries = preferProvider(entries, "opencode");
-  const pricing = resolvePricing(modelNames, opencodeEntries);
+
+  const providersByModel = new Map<string, string>();
+  for (const record of records) {
+    const r = record as { model?: string; provider?: string };
+    if (r.model && r.provider) providersByModel.set(r.model, r.provider);
+  }
+
+  const pricing: Record<string, unknown> = {};
+  for (const model of modelNames) {
+    const provider = providersByModel.get(model);
+    const pool = provider ? preferProvider(entries, provider) : entries;
+    const resolved = resolvePricing([model], pool);
+    if (resolved[model]) pricing[model] = resolved[model];
+  }
 
   return {
     pricing,
     pricingMeta: {
       source: MODELS_DEV_URL,
-      provider: opencodeEntries.length ? "opencode" : "mixed",
       fetchedAt: modelsDevCache.fetchedAt
         ? new Date(modelsDevCache.fetchedAt).toISOString()
         : null,

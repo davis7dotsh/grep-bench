@@ -9,6 +9,7 @@ bun install
 # models to test...
 
 - gpt-5.2-codex
+- gpt-5-nano
 - claude-sonnet-4-5
 - gemini-3-flash
 - minimax-m2.1-free

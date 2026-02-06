@@ -3,9 +3,9 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 
 const TESTS = [
   {
-    id: "sveltekit-form-remote",
+    id: "sveltekit-remote",
     question:
-      "How do I do progressive enhancement with SvelteKit form actions using the form remote function? Provide a short explanation and a minimal code example.",
+      "How do SvelteKit remote functions work? I need to understand the syntax and usage for calling server-side functions from the client. Show me examples of how to define and call remote functions, including the file naming conventions and any configuration needed",
     resource: {
       type: "git",
       name: "svelte",
@@ -48,15 +48,14 @@ const TESTS = [
     },
   },
 ];
-const MODELS = [
-  "gpt-5.2-codex",
-  "claude-sonnet-4-5",
-  "claude-haiku-4-5",
-  "gemini-3-flash",
-  "minimax-m2.1",
-  "glm-4.7",
-  "kimi-k2.5",
-  "qwen3-coder",
+const MODELS: Array<{ model: string; provider: string }> = [
+  { model: "gpt-5.2-codex", provider: "openai" },
+  { model: "gpt-5.3-codex", provider: "openai" },
+  { model: "claude-opus-4-6", provider: "opencode" },
+  { model: "claude-opus-4-5", provider: "opencode" },
+  { model: "claude-haiku-4-5", provider: "opencode" },
+  { model: "gemini-3-flash", provider: "opencode" },
+  { model: "minimax-m2.1", provider: "opencode" },
 ];
 const BENCH_ROOT = ".btca-bench";
 const BTCA_SCHEMA = "https://btca.dev/btca.schema.json";
@@ -131,7 +130,11 @@ const waitForServer = async (baseUrl: string, timeoutMs = 30_000) => {
 
 const sanitize = (value: string) => value.replace(/[^a-z0-9-_]+/gi, "-");
 
-const createServerWorkspace = async (model: string, tests: typeof TESTS) => {
+const createServerWorkspace = async (
+  model: string,
+  provider: string,
+  tests: typeof TESTS,
+) => {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const dir = `${BENCH_ROOT}/${sanitize(model)}-${stamp}`;
   const dataDir = `${dir}/data`;
@@ -140,7 +143,7 @@ const createServerWorkspace = async (model: string, tests: typeof TESTS) => {
 
   const config = {
     $schema: BTCA_SCHEMA,
-    provider: "opencode",
+    provider,
     model,
     dataDirectory: "./data",
     resources: uniqueResources(tests),
@@ -149,6 +152,27 @@ const createServerWorkspace = async (model: string, tests: typeof TESTS) => {
   await Bun.write(`${dir}/btca.config.jsonc`, JSON.stringify(config, null, 2));
 
   return dir;
+};
+
+const collectStderr = (proc: ReturnType<typeof Bun.spawn>) => {
+  const chunks: string[] = [];
+  const stderr = proc.stderr;
+  if (!stderr || typeof stderr === "number") return () => "";
+  const reader = (stderr as ReadableStream<Uint8Array>).getReader();
+  const decoder = new TextDecoder();
+  const pump = async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(decoder.decode(value, { stream: true }));
+      }
+    } catch {
+      // process exited
+    }
+  };
+  pump();
+  return () => chunks.join("");
 };
 
 const startBtcaServer = async (cwd?: string) => {
@@ -171,10 +195,11 @@ const startBtcaServer = async (cwd?: string) => {
     });
 
     const baseUrl = `http://localhost:${port}`;
+    const getStderr = collectStderr(proc);
 
     try {
       await waitForServer(baseUrl);
-      return { proc, baseUrl };
+      return { proc, baseUrl, getStderr };
     } catch (error) {
       proc.kill();
       if (attempt === attempts - 1) throw error;
@@ -199,10 +224,10 @@ const ensureResource = async (baseUrl: string, resource: { name: string }) => {
   }
 };
 
-const setModel = (baseUrl: string, model: string) =>
+const setModel = (baseUrl: string, model: string, provider: string) =>
   fetchJson(`${baseUrl}/config/model`, {
     method: "PUT",
-    body: JSON.stringify({ provider: "opencode", model }),
+    body: JSON.stringify({ provider, model }),
   });
 
 const safeJson = (value: string) => {
@@ -343,11 +368,12 @@ const judgeAnswer = async (
 
 const runModelBench = async (
   model: string,
+  provider: string,
   runs: number,
   judge: ReturnType<typeof createJudge>,
   tests: typeof TESTS,
 ) => {
-  const workspace = await createServerWorkspace(model, tests);
+  const workspace = await createServerWorkspace(model, provider, tests);
   const server = await startBtcaServer(workspace);
 
   try {
@@ -356,7 +382,7 @@ const runModelBench = async (
         ensureResource(server.baseUrl, resource),
       ),
     );
-    await setModel(server.baseUrl, model);
+    await setModel(server.baseUrl, model, provider);
 
     const records: Array<{
       model: string;
@@ -387,6 +413,7 @@ const runModelBench = async (
 
           const record = {
             model,
+            provider,
             testId: test.id,
             run,
             startedAt,
@@ -425,6 +452,7 @@ const runModelBench = async (
           const message = formatError(error);
           const record = {
             model,
+            provider,
             testId: test.id,
             run,
             startedAt,
@@ -449,6 +477,10 @@ const runModelBench = async (
           };
 
           console.error(`[${model}] ${test.id} run ${run} failed: ${message}`);
+          const stderr = server.getStderr();
+          if (stderr.trim()) {
+            console.error(`[${model}] btca stderr:\n${stderr}`);
+          }
 
           records.push({
             model,
@@ -480,13 +512,19 @@ const runBench = async () => {
   const args = process.argv.slice(2);
   const runs = parseRuns(args);
   const modelOverride = parseModel(args);
-  const models = modelOverride ? [modelOverride] : unique(MODELS);
+  const entries = modelOverride
+    ? MODELS.find((m) => m.model === modelOverride)
+      ? MODELS.filter((m) => m.model === modelOverride)
+      : [{ model: modelOverride, provider: "opencode" }]
+    : MODELS;
   const resultsDir = await ensureResultsDir();
   const resultsPath = `${resultsDir}/bench-results-${buildTimestamp()}.jsonl`;
   const judge = createJudge();
 
   const modelResults = await Promise.all(
-    models.map((model) => runModelBench(model, runs, judge, TESTS)),
+    entries.map(({ model, provider }) =>
+      runModelBench(model, provider, runs, judge, TESTS),
+    ),
   );
 
   const records = modelResults.flat();

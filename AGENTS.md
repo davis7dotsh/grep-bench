@@ -29,3 +29,5 @@ test("hello world", () => {
   expect(1).toBe(1);
 });
 ```
+
+When you're done making a change, always run `bun check` and `bun format` to ensure your code is correct.
