@@ -1,5 +1,7 @@
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 
 const TESTS = [
   {
@@ -323,15 +325,24 @@ const streamQuestion = async (
   };
 };
 
-const createJudge = () => {
-  const apiKey = process.env.OPENCODE_API_KEY;
-  if (!apiKey) throw new Error("OPENCODE_API_KEY is missing from environment.");
+const createCouncil = () => {
+  const zenKey = process.env.OPENCODE_API_KEY;
+  if (!zenKey) throw new Error("OPENCODE_API_KEY is missing from environment.");
+  const routerKey = process.env.OPENROUTER_API_KEY;
+  if (!routerKey) throw new Error("OPENROUTER_API_KEY is missing from environment.");
 
-  return createAnthropic({
-    apiKey,
-    baseURL: "https://opencode.ai/zen/v1",
-  });
+  const anthropic = createAnthropic({ apiKey: zenKey, baseURL: "https://opencode.ai/zen/v1" });
+  const openai = createOpenAI({ apiKey: zenKey, baseURL: "https://opencode.ai/zen/v1" });
+  const openrouter = createOpenRouter({ apiKey: routerKey });
+
+  return [
+    { id: "gpt-5.2-codex", model: openai("gpt-5.2-codex") },
+    { id: "gemini-3-pro", model: openrouter.chat("google/gemini-3-pro-preview") },
+    { id: "claude-opus-4-6", model: anthropic("claude-opus-4-6") },
+  ];
 };
+
+type Council = ReturnType<typeof createCouncil>;
 
 const parseJudgeResponse = (raw: string) => {
   const match = raw.match(/\{[\s\S]*\}/);
@@ -341,11 +352,7 @@ const parseJudgeResponse = (raw: string) => {
   return parsed as { score: number; clarity?: number; notes?: string };
 };
 
-const judgeAnswer = async (
-  judge: ReturnType<typeof createJudge>,
-  question: string,
-  answer: string,
-) => {
+const judgeAnswer = async (council: Council, question: string, answer: string) => {
   const system = [
     "You are a strict evaluator.",
     "Score usefulness 0-4 based on whether the answer is good enough to implement/solve the problem (0 incorrect, 1 partial, 2 mostly correct, 3 correct and complete, 4 correct and includes precise API names or file references).",
@@ -355,22 +362,44 @@ const judgeAnswer = async (
 
   const prompt = `Question:\n${question}\n\nAnswer:\n${answer}\n\nReturn JSON only.`;
 
-  const { text } = await generateText({
-    model: judge("claude-haiku-4-5"),
-    system,
-    prompt,
-    temperature: 0,
-    maxOutputTokens: 300,
-  });
+  const votes = await Promise.all(
+    council.map(async (judge) => {
+      try {
+        const { text } = await generateText({
+          model: judge.model,
+          system,
+          prompt,
+        });
+        return { model: judge.id, raw: text, parsed: parseJudgeResponse(text) };
+      } catch (error) {
+        console.error(`[council] ${judge.id} failed: ${formatError(error)}`);
+        return { model: judge.id, raw: "", parsed: null };
+      }
+    }),
+  );
 
-  return { raw: text, parsed: parseJudgeResponse(text) };
+  const scores = votes
+    .map((v) => v.parsed?.score)
+    .filter((s): s is number => s !== null && s !== undefined);
+  const clarities = votes
+    .map((v) => v.parsed?.clarity)
+    .filter((c): c is number => c !== null && c !== undefined);
+
+  const avg = (nums: number[]) =>
+    nums.length ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100 : null;
+
+  return {
+    score: avg(scores),
+    clarity: avg(clarities),
+    votes,
+  };
 };
 
 const runModelBench = async (
   model: string,
   provider: string,
   runs: number,
-  judge: ReturnType<typeof createJudge>,
+  council: Council,
   tests: typeof TESTS,
 ) => {
   const workspace = await createServerWorkspace(model, provider, tests);
@@ -407,9 +436,9 @@ const runModelBench = async (
           const durationSec =
             Math.round(((Date.now() - start) / 1000) * 100) / 100;
 
-          const judged = await judgeAnswer(judge, test.question, response.text);
-          const score = judged.parsed?.score ?? null;
-          const clarity = judged.parsed?.clarity ?? null;
+          const judged = await judgeAnswer(council, test.question, response.text);
+          const score = judged.score;
+          const clarity = judged.clarity;
 
           const record = {
             model,
@@ -431,9 +460,14 @@ const runModelBench = async (
             judge: {
               score,
               clarity,
-              notes: judged.parsed?.notes ?? null,
-              raw: judged.raw,
-              model: "claude-haiku-4-5",
+              model: "council",
+              votes: judged.votes.map((v) => ({
+                model: v.model,
+                score: v.parsed?.score ?? null,
+                clarity: v.parsed?.clarity ?? null,
+                notes: v.parsed?.notes ?? null,
+                raw: v.raw,
+              })),
             },
           };
 
@@ -470,9 +504,8 @@ const runModelBench = async (
             judge: {
               score: null,
               clarity: null,
-              notes: null,
-              raw: "",
-              model: "claude-haiku-4-5",
+              model: "council",
+              votes: [],
             },
           };
 
@@ -519,11 +552,11 @@ const runBench = async () => {
     : MODELS;
   const resultsDir = await ensureResultsDir();
   const resultsPath = `${resultsDir}/bench-results-${buildTimestamp()}.jsonl`;
-  const judge = createJudge();
+  const council = createCouncil();
 
   const modelResults = await Promise.all(
     entries.map(({ model, provider }) =>
-      runModelBench(model, provider, runs, judge, TESTS),
+      runModelBench(model, provider, runs, council, TESTS),
     ),
   );
 
