@@ -767,6 +767,7 @@
               <td class="num">${fmtUsd(m.avgCost)}</td>
               <td class="num">${fmt(m.medDuration, 1)}s</td>
               <td class="num">${fmt(m.avgTps, 0)}</td>
+              <td class="num">${fmt(m.avgToolCalls, 1)}</td>
               <td class="num">${m.runs}</td>
               <td class="num">${m.failures || "—"}</td>
             </tr>`,
@@ -782,6 +783,7 @@
             <th class="num">Cost</th>
             <th class="num">Wall Clock</th>
             <th class="num">TPS</th>
+            <th class="num">Tools</th>
             <th class="num">Runs</th>
             <th class="num">Fails</th>
           </tr></thead>
