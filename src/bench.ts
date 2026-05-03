@@ -1,6 +1,6 @@
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import {
@@ -37,7 +37,10 @@ type BenchTest = {
   expected: { requiredAny: string[][] };
 };
 
-type ResourceState = ResourceConfig & { localPath: string };
+type ResourceState = ResourceConfig & {
+  localPath: string;
+  commit?: string;
+};
 
 type PiServices = {
   authStorage: ReturnType<typeof AuthStorage.create>;
@@ -48,7 +51,13 @@ type PiServices = {
 type RunResult = {
   answer: string;
   toolCalls: number;
-  tokens: { input: number | null; output: number | null; total: number | null };
+  tokens: {
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    total: number | null;
+  };
   costUSD: number | null;
   durationSec: number;
   timeToFirstModelDeltaMs: number | null;
@@ -346,7 +355,8 @@ const ensureGitCache = async (resource: ResourceConfig, cacheRoot: string) => {
     await Bun.$`git -C ${target} checkout ${resource.branch ?? "main"}`;
     await Bun.$`git -C ${target} reset --hard FETCH_HEAD`;
   }
-  return target;
+  const commit = (await Bun.$`git -C ${target} rev-parse HEAD`.text()).trim();
+  return { cachePath: target, commit };
 };
 
 const prepareWorkspace = async (resources: ResourceConfig[]) => {
@@ -365,13 +375,14 @@ const prepareWorkspace = async (resources: ResourceConfig[]) => {
 
   for (const resource of resources) {
     if (resource.type === "git") {
-      const cache = await ensureGitCache(resource, cacheRoot);
+      const { cachePath, commit } = await ensureGitCache(resource, cacheRoot);
       const localPath = join(workspaceRoot, "repos", sanitize(resource.name));
-      await cp(cache, localPath, {
+      const gitDir = join(cachePath, ".git");
+      await cp(cachePath, localPath, {
         recursive: true,
-        filter: (src) => !src.includes(`${cache}/.git`),
+        filter: (src) => src !== gitDir && !src.startsWith(`${gitDir}${sep}`),
       });
-      resourceMap.set(resource.name, { ...resource, localPath });
+      resourceMap.set(resource.name, { ...resource, localPath, commit });
     } else {
       const source = join(
         process.cwd(),
@@ -428,10 +439,12 @@ const usageTotals = (messages: unknown[]) =>
       (total, message) => ({
         input: total.input + message.usage.input,
         output: total.output + message.usage.output,
+        cacheRead: total.cacheRead + message.usage.cacheRead,
+        cacheWrite: total.cacheWrite + message.usage.cacheWrite,
         total: total.total + message.usage.totalTokens,
         cost: total.cost + message.usage.cost.total,
       }),
-      { input: 0, output: 0, total: 0, cost: 0 },
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 },
     );
 
 const assistantText = (messages: unknown[]) =>
@@ -498,8 +511,7 @@ const runPiAgentQuestion = async (
     if (event.type === "tool_execution_start") toolCalls += 1;
     if (event.type === "message_update") {
       const type = event.assistantMessageEvent.type;
-      if (type === "text_delta" || type === "thinking_delta")
-        firstModelDeltaAt ??= Date.now();
+      if (type !== "start") firstModelDeltaAt ??= Date.now();
     }
   });
   try {
@@ -510,7 +522,13 @@ const runPiAgentQuestion = async (
     return {
       answer: assistantText(session.messages),
       toolCalls,
-      tokens: { input: usage.input, output: usage.output, total: usage.total },
+      tokens: {
+        input: usage.input,
+        output: usage.output,
+        cacheRead: usage.cacheRead,
+        cacheWrite: usage.cacheWrite,
+        total: usage.total,
+      },
       costUSD: usage.cost,
       durationSec,
       timeToFirstModelDeltaMs:
@@ -686,6 +704,7 @@ const runModelBench = async (
         `Running ${modelConfig.model} ${test.id} (${run}/${runs})...`,
       );
       const startedAt = new Date().toISOString();
+      const runStartedMs = Date.now();
       try {
         const response = await runPiAgentQuestion(
           workspaceRoot,
@@ -708,6 +727,8 @@ const runModelBench = async (
             toolCalls: response.toolCalls,
             inputTokens: response.tokens.input,
             outputTokens: response.tokens.output,
+            cacheReadTokens: response.tokens.cacheRead,
+            cacheWriteTokens: response.tokens.cacheWrite,
             costUSD: response.costUSD,
             outputWallClockTps: response.outputWallClockTps,
             score: judged.score,
@@ -731,6 +752,7 @@ const runModelBench = async (
             question: test.question,
             resources: [resource.name],
             localResourcePath: resource.localPath,
+            localResourceCommit: resource.commit ?? null,
             answer: response.answer,
             error: null,
             judge: {
@@ -757,15 +779,18 @@ const runModelBench = async (
         console.error(
           `[${modelConfig.model}] ${test.id} run ${run} failed: ${message}`,
         );
+        const durationSec = round((Date.now() - runStartedMs) / 1000);
         records.push({
           summary: {
             testId: test.id,
             model: modelConfig.model,
-            durationSec: 0,
+            durationSec,
             timeToFirstModelDeltaMs: null,
             toolCalls: 0,
             inputTokens: null,
             outputTokens: null,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
             costUSD: null,
             outputWallClockTps: null,
             score: null,
@@ -780,15 +805,22 @@ const runModelBench = async (
             testId: test.id,
             run,
             startedAt,
-            durationSec: 0,
+            durationSec,
             timeToFirstModelDeltaMs: null,
             toolCalls: 0,
-            tokens: { input: null, output: null, total: null },
+            tokens: {
+              input: null,
+              output: null,
+              cacheRead: null,
+              cacheWrite: null,
+              total: null,
+            },
             tps: { outputWallClock: null },
             costUSD: null,
             question: test.question,
             resources: [test.resourceName],
             localResourcePath: resource.localPath,
+            localResourceCommit: resource.commit ?? null,
             answer: "",
             error: message,
             judge: { score: null, clarity: null, model: "council", votes: [] },
@@ -868,6 +900,12 @@ const runBench = async () => {
         : "n/a",
       avgOutputTokens: nums((entry) => entry.outputTokens).length
         ? round(avg(nums((entry) => entry.outputTokens)))
+        : "n/a",
+      avgCacheReadTokens: nums((entry) => entry.cacheReadTokens).length
+        ? round(avg(nums((entry) => entry.cacheReadTokens)))
+        : "n/a",
+      avgCacheWriteTokens: nums((entry) => entry.cacheWriteTokens).length
+        ? round(avg(nums((entry) => entry.cacheWriteTokens)))
         : "n/a",
       avgOutputWallClockTps: nums((entry) => entry.outputWallClockTps).length
         ? round(avg(nums((entry) => entry.outputWallClockTps)))

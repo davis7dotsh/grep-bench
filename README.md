@@ -52,7 +52,7 @@ Council judges:
 
 The suite runs the V2 fixed test list in `src/bench.ts`:
 
-- 13 test prompts total
+- 11 test prompts total
 - Resources used: `svelte`, `tailwindcss`, `justBash`, `daytona`
 - Git repos are cached under `.pi-bench/cache/repos`
 - Timestamped run workspaces are created under `.pi-bench/workspaces/<timestamp>`
@@ -67,7 +67,7 @@ For each selected model, `src/bench.ts`:
 - Creates a fresh in-memory Pi SDK coding-agent session per `(model, test, run)`.
 - Exposes only `read` and `bash` tools to benchmark agents.
 - Runs council judging through Pi SDK sessions with no tools.
-- Extracts wall-clock time, time to first model delta, tool calls, input/output/total tokens, output tokens/sec, and cost.
+- Extracts wall-clock time, time to first model output event, tool calls, input/output/cache/total tokens, output tokens/sec, and cost.
 
 ## Output
 
@@ -80,9 +80,9 @@ results/bench-results-<timestamp>.jsonl
 Each line is a full JSON record with:
 
 - question metadata
-- local resource path
+- local resource path and git commit
 - raw answer
-- token/cost/timing metrics
+- token/cost/timing metrics, including prompt-cache read/write tokens when providers report them
 - tool usage and error fields
 - judge score/clarity/votes and disagreement stats
 
@@ -93,7 +93,7 @@ The terminal summary prints averages for:
 - tool calls
 - judge score
 - clarity
-- input/output tokens
+- input/output/cache tokens
 - output wall-clock tokens/sec
 - cost
 - failed run count

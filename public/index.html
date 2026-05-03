@@ -641,6 +641,8 @@
       const clarityVal = (r) => r.judge?.clarity ?? null;
       const outTokens = (r) => r.tokens?.output ?? null;
       const inTokens = (r) => r.tokens?.input ?? null;
+      const cacheReadTokens = (r) => r.tokens?.cacheRead ?? null;
+      const cacheWriteTokens = (r) => r.tokens?.cacheWrite ?? null;
       const costVal = (r) => r.costUSD ?? null;
       const tpsVal = (r) => {
         if (typeof r.tps?.outputWallClock === "number")
@@ -950,6 +952,8 @@
               <td class="num">${r.toolCalls ?? "—"}</td>
               <td class="num">${fmt(inTokens(r), 0)}</td>
               <td class="num">${fmt(outTokens(r), 0)}</td>
+              <td class="num">${fmt(cacheReadTokens(r), 0)}</td>
+              <td class="num">${fmt(cacheWriteTokens(r), 0)}</td>
               <td class="num">${fmt(r.tokens?.total, 0)}</td>
               <td class="answer-preview" title="${escHtml(r.localResourcePath ?? "")}">${escHtml(shortPath(r.localResourcePath))}</td>
               <td>${r.error ? `<span class="error-tag">${escHtml(r.error)}</span>` : `<span class="answer-preview">${escHtml((r.answer ?? "").slice(0, 120))}</span>`}</td>
@@ -962,7 +966,7 @@
           <thead><tr>
             <th>Model</th><th>Test</th><th class="num">Run</th><th class="num">Score</th><th class="num">Clarity</th>
             <th class="num">Wall Clock</th><th class="num">TTFD</th><th class="num">TPS</th><th class="num">Cost</th><th class="num">Tools</th>
-            <th class="num">Input</th><th class="num">Output</th><th class="num">Total</th><th>Resource</th><th>Result</th><th>Raw</th>
+            <th class="num">Input</th><th class="num">Output</th><th class="num">Cache Read</th><th class="num">Cache Write</th><th class="num">Total</th><th>Resource</th><th>Result</th><th>Raw</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
