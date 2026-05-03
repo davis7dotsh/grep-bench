@@ -202,7 +202,7 @@
       /* Charts grid */
       .charts-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 20px;
         margin-top: 32px;
       }
@@ -222,7 +222,7 @@
 
       .chart-card canvas {
         width: 100%;
-        height: 260px;
+        height: 220px;
         display: block;
       }
 
@@ -512,6 +512,12 @@
         font-size: 0.875rem;
       }
 
+      @media (max-width: 900px) {
+        .charts-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
       @media (max-width: 700px) {
         .charts-grid {
           grid-template-columns: 1fr;
@@ -536,7 +542,7 @@
       <h2 class="section-title">Model Leaderboard</h2>
       <div id="leaderboard"></div>
 
-      <div class="charts-grid" id="primary-charts">
+      <div class="charts-grid" id="charts">
         <div class="chart-card">
           <h3>Score by Model (higher is better)</h3>
           <canvas id="score-chart"></canvas>
@@ -553,29 +559,23 @@
           <h3>Output TPS (higher is better)</h3>
           <canvas id="tps-chart"></canvas>
         </div>
-      </div>
-
-      <section>
-        <h2 class="section-title">More Charts</h2>
-        <div class="charts-grid">
-          <div class="chart-card">
-            <h3>Tool Calls by Model (lower is better)</h3>
-            <canvas id="tool-chart"></canvas>
-          </div>
-          <div class="chart-card">
-            <h3>Output Tokens by Model (contextual)</h3>
-            <canvas id="token-chart"></canvas>
-          </div>
-          <div class="chart-card">
-            <h3>Input Tokens by Model (lower is better)</h3>
-            <canvas id="input-token-chart"></canvas>
-          </div>
-          <div class="chart-card">
-            <h3>Judge Disagreement (σ, lower is better)</h3>
-            <canvas id="disagreement-chart"></canvas>
-          </div>
+        <div class="chart-card">
+          <h3>Tool Calls by Model (lower is better)</h3>
+          <canvas id="tool-chart"></canvas>
         </div>
-      </section>
+        <div class="chart-card">
+          <h3>Output Tokens by Model (contextual)</h3>
+          <canvas id="token-chart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Input Tokens by Model (lower is better)</h3>
+          <canvas id="input-token-chart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Judge Disagreement (σ, lower is better)</h3>
+          <canvas id="disagreement-chart"></canvas>
+        </div>
+      </div>
 
       <section>
         <h2 class="section-title">
