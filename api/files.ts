@@ -1,8 +1,6 @@
-import { json, listResultFiles } from "./_results.ts";
+import { json, listResultFiles } from "../src/results-api.ts";
 
-export default {
-  async fetch() {
-    const files = await listResultFiles();
-    return json({ files });
-  },
-};
+export default async function handler() {
+  const files = await listResultFiles();
+  return json({ files });
+}
