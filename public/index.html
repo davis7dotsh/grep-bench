@@ -1,0 +1,1018 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grep Bench</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      :root {
+        --fg: #e5e5e5;
+        --fg-2: #a3a3a3;
+        --fg-3: #737373;
+        --bg: #0a0a0a;
+        --bg-2: #171717;
+        --border: #262626;
+        --accent: #60a5fa;
+        --green: #4ade80;
+        --red: #f87171;
+        --mono: "SF Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+        --sans:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        --radius: 8px;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        color: var(--fg);
+        background: var(--bg);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .container {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 24px 20px 64px;
+      }
+
+      /* Header */
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 24px;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .header-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      select {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg);
+        color: var(--fg);
+        cursor: pointer;
+      }
+
+      select:hover {
+        border-color: #404040;
+      }
+
+      /* Top stats */
+      .top-stats {
+        display: flex;
+        gap: 32px;
+        flex-wrap: wrap;
+        margin-bottom: 32px;
+      }
+
+      .top-stat {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .top-stat .label {
+        font-size: 0.75rem;
+        color: var(--fg-3);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 500;
+      }
+
+      .top-stat .value {
+        font-family: var(--mono);
+        font-size: 1.5rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1.3;
+      }
+
+      /* Leaderboard */
+      .section-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin: 0 0 12px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+      }
+
+      thead th {
+        text-align: left;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--fg-3);
+        font-weight: 500;
+        padding: 0 12px 8px;
+        border-bottom: 2px solid var(--border);
+        white-space: nowrap;
+      }
+
+      thead th.num {
+        text-align: right;
+      }
+
+      tbody td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+      }
+
+      tbody td.num {
+        text-align: right;
+        font-family: var(--mono);
+        font-size: 0.82rem;
+      }
+
+      tbody tr:hover {
+        background: var(--bg-2);
+      }
+
+      .model-name {
+        font-weight: 500;
+      }
+
+      .rank {
+        color: var(--fg-3);
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        min-width: 24px;
+      }
+
+      .score-bar-cell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .score-bar-track {
+        flex: 1;
+        height: 6px;
+        background: var(--bg-2);
+        border-radius: 3px;
+        overflow: hidden;
+        min-width: 60px;
+      }
+
+      .score-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        background: var(--accent);
+        transition: width 0.3s ease;
+      }
+
+      .score-val {
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        font-weight: 600;
+        min-width: 36px;
+        text-align: right;
+      }
+
+      /* Charts grid */
+      .charts-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-top: 32px;
+      }
+
+      .chart-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px;
+      }
+
+      .chart-card h3 {
+        margin: 0 0 12px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--fg-2);
+      }
+
+      .chart-card canvas {
+        width: 100%;
+        height: 260px;
+        display: block;
+      }
+
+      /* Expandable sections */
+      details {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        margin-top: 20px;
+      }
+
+      details + details {
+        margin-top: 12px;
+      }
+
+      summary {
+        padding: 12px 16px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      summary::before {
+        content: "▸";
+        font-size: 0.75rem;
+        color: var(--fg-3);
+        transition: transform 0.15s ease;
+        display: inline-block;
+      }
+
+      details[open] > summary::before {
+        transform: rotate(90deg);
+      }
+
+      summary .badge {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        font-weight: 500;
+        color: var(--fg-3);
+        background: var(--bg-2);
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+
+      .details-body {
+        padding: 0 16px 16px;
+      }
+
+      /* Filters */
+      .filter-row {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+
+      .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex: 1;
+        min-width: 200px;
+      }
+
+      .filter-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--fg-3);
+        font-weight: 500;
+      }
+
+      .chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        cursor: pointer;
+        background: var(--bg);
+        transition: all 0.1s ease;
+      }
+
+      .chip:hover {
+        border-color: #404040;
+      }
+
+      .chip.active {
+        background: var(--fg);
+        color: var(--bg);
+        border-color: var(--fg);
+      }
+
+      .chip input {
+        display: none;
+      }
+
+      .chip-actions {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+
+      .chip-actions button {
+        border: none;
+        background: transparent;
+        font-size: 0.72rem;
+        color: var(--accent);
+        cursor: pointer;
+        padding: 0;
+        font-family: var(--sans);
+      }
+
+      .chip-actions button:hover {
+        text-decoration: underline;
+      }
+
+      input[type="text"] {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        width: 100%;
+        max-width: 260px;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        max-width: 200px;
+        margin: 0;
+      }
+
+      .range-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .range-value {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--fg-2);
+        min-width: 24px;
+      }
+
+      .toggle-group {
+        display: flex;
+        gap: 4px;
+      }
+
+      .toggle-btn {
+        padding: 4px 10px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        font-size: 0.72rem;
+        cursor: pointer;
+        font-family: var(--sans);
+      }
+
+      .toggle-btn:first-child {
+        border-radius: var(--radius) 0 0 var(--radius);
+      }
+
+      .toggle-btn:last-child {
+        border-radius: 0 var(--radius) var(--radius) 0;
+      }
+
+      .toggle-btn.active {
+        background: var(--fg);
+        color: var(--bg);
+        border-color: var(--fg);
+      }
+
+      /* Per-test table */
+      .test-table {
+        font-size: 0.8rem;
+        overflow-x: auto;
+      }
+
+      .test-table table {
+        min-width: 600px;
+      }
+
+      .test-table td,
+      .test-table th {
+        padding: 6px 10px;
+      }
+
+      .test-name {
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        word-break: break-all;
+      }
+
+      /* Runs table */
+      .runs-table {
+        overflow-x: auto;
+      }
+
+      .runs-table table {
+        font-size: 0.78rem;
+        min-width: 900px;
+      }
+
+      .runs-table td,
+      .runs-table th {
+        padding: 6px 8px;
+      }
+
+      .error-tag {
+        color: var(--red);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+      }
+
+      .answer-preview {
+        max-width: 280px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 0.72rem;
+        color: var(--fg-2);
+      }
+
+      section {
+        margin-top: 32px;
+      }
+
+      td details {
+        margin: 0;
+        border: none;
+      }
+
+      td summary {
+        padding: 0;
+        font-size: 0.72rem;
+        color: var(--accent);
+      }
+
+      pre {
+        max-width: 720px;
+        max-height: 420px;
+        overflow: auto;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-2);
+        color: var(--fg-2);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        white-space: pre-wrap;
+      }
+
+      /* Color scale for scores */
+      .score-high {
+        color: var(--green);
+      }
+      .score-mid {
+        color: #facc15;
+      }
+      .score-low {
+        color: var(--red);
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--fg-3);
+        font-size: 0.875rem;
+      }
+
+      @media (max-width: 700px) {
+        .charts-grid {
+          grid-template-columns: 1fr;
+        }
+        .top-stats {
+          gap: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Grep Bench</h1>
+        <div class="header-controls">
+          <select id="file-select"></select>
+        </div>
+      </header>
+
+      <div class="top-stats" id="top-stats"></div>
+
+      <h2 class="section-title">Model Leaderboard</h2>
+      <div id="leaderboard"></div>
+
+      <div class="charts-grid" id="primary-charts">
+        <div class="chart-card">
+          <h3>Score by Model (higher is better)</h3>
+          <canvas id="score-chart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Cost per Run (USD, lower is better)</h3>
+          <canvas id="cost-chart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Median Wall Clock (s, lower is better)</h3>
+          <canvas id="duration-chart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Output TPS (higher is better)</h3>
+          <canvas id="tps-chart"></canvas>
+        </div>
+      </div>
+
+      <section>
+        <h2 class="section-title">More Charts</h2>
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h3>Tool Calls by Model (lower is better)</h3>
+            <canvas id="tool-chart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Output Tokens by Model (contextual)</h3>
+            <canvas id="token-chart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Input Tokens by Model (lower is better)</h3>
+            <canvas id="input-token-chart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Judge Disagreement (σ, lower is better)</h3>
+            <canvas id="disagreement-chart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">
+          Per-Test Breakdown <span class="badge" id="test-count">0</span>
+        </h2>
+        <div class="test-table" id="per-test-table"></div>
+      </section>
+
+      <section>
+        <h2 class="section-title">
+          All Runs <span class="badge" id="runs-count">0</span>
+        </h2>
+        <div class="runs-table" id="runs-table"></div>
+      </section>
+    </div>
+
+    <script type="module">
+      const api = {
+        files: () => fetch("/api/files").then((r) => r.json()),
+        results: (file) =>
+          fetch(`/api/results?file=${encodeURIComponent(file ?? "")}`).then(
+            (r) => r.json(),
+          ),
+      };
+
+      const qs = (sel, root = document) => root.querySelector(sel);
+      const qsa = (sel, root = document) =>
+        Array.from(root.querySelectorAll(sel));
+      const fmt = (v, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : "—");
+      const fmtUsd = (v) => (Number.isFinite(v) ? `$${v.toFixed(4)}` : "—");
+      const uniq = (arr) => [...new Set(arr)];
+      const escHtml = (s) =>
+        String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+
+      const palette = [
+        "#60a5fa",
+        "#f87171",
+        "#4ade80",
+        "#facc15",
+        "#c084fc",
+        "#22d3ee",
+        "#fb7185",
+        "#a3e635",
+        "#fb923c",
+        "#818cf8",
+      ];
+      const colorFor = (model, models) => {
+        const idx = models.indexOf(model);
+        return palette[idx % palette.length];
+      };
+
+      const state = {
+        records: [],
+        files: [],
+        file: null,
+        models: [],
+      };
+
+      const scoreVal = (r) => r.judge?.score ?? null;
+      const clarityVal = (r) => r.judge?.clarity ?? null;
+      const outTokens = (r) => r.tokens?.output ?? null;
+      const inTokens = (r) => r.tokens?.input ?? null;
+      const costVal = (r) => r.costUSD ?? null;
+      const tpsVal = (r) => {
+        if (typeof r.tps?.outputWallClock === "number")
+          return r.tps.outputWallClock;
+        if (typeof r.tps?.output === "number") return r.tps.output;
+        if (typeof r.tokens?.output === "number" && r.durationSec > 0)
+          return r.tokens.output / r.durationSec;
+        return null;
+      };
+      const disagreeVal = (r) => r.judge?.disagreement?.stdDev ?? null;
+      const isFail = (r) => Boolean(r.error) || (r.failedToolCalls ?? 0) > 0;
+
+      const avg = (arr) =>
+        arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+      const median = (arr) => {
+        if (!arr.length) return null;
+        const s = [...arr].sort((a, b) => a - b);
+        const m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+      };
+      const nums = (arr) =>
+        arr.filter((v) => typeof v === "number" && Number.isFinite(v));
+
+      const allRecords = () => state.records;
+
+      const scoreClass = (v) => {
+        if (v === null || v === undefined) return "";
+        if (v >= 3) return "score-high";
+        if (v >= 2) return "score-mid";
+        return "score-low";
+      };
+
+      const buildModelSummary = (records) => {
+        const grouped = {};
+        for (const r of records) {
+          (grouped[r.model] ??= []).push(r);
+        }
+        return Object.entries(grouped)
+          .map(([model, runs]) => ({
+            model,
+            runs: runs.length,
+            avgScore: avg(nums(runs.map(scoreVal))),
+            medDuration: median(nums(runs.map((r) => r.durationSec))),
+            avgToolCalls: avg(nums(runs.map((r) => r.toolCalls))),
+            avgInTokens: avg(nums(runs.map(inTokens))),
+            avgOutTokens: avg(nums(runs.map(outTokens))),
+            avgCost: avg(nums(runs.map(costVal))),
+            avgTps: avg(nums(runs.map(tpsVal))),
+            avgDisagree: avg(nums(runs.map(disagreeVal))),
+            thinkingLevels: uniq(
+              runs.map((r) => r.thinkingLevel ?? "default").filter(Boolean),
+            ).join(", "),
+            failures: runs.filter(isFail).length,
+          }))
+          .sort((a, b) => (b.avgScore ?? -1) - (a.avgScore ?? -1));
+      };
+
+      const renderTopStats = (records) => {
+        const scores = nums(records.map(scoreVal));
+        const durations = nums(records.map((r) => r.durationSec));
+        const costs = nums(records.map(costVal));
+        const tps = nums(records.map(tpsVal));
+        const fails = records.filter(isFail).length;
+
+        const items = [
+          { label: "Runs", value: records.length },
+          { label: "Avg Score", value: fmt(avg(scores), 2) },
+          { label: "Med. Wall Clock", value: `${fmt(median(durations), 1)}s` },
+          { label: "Avg Cost", value: fmtUsd(avg(costs)) },
+          { label: "Avg TPS", value: fmt(avg(tps), 0) },
+          { label: "Failures", value: fails },
+        ];
+
+        qs("#top-stats").innerHTML = items
+          .map(
+            (i) =>
+              `<div class="top-stat"><span class="label">${i.label}</span><span class="value">${i.value}</span></div>`,
+          )
+          .join("");
+      };
+
+      const renderLeaderboard = (summary) => {
+        if (!summary.length) {
+          qs("#leaderboard").innerHTML =
+            '<div class="empty-state">No data</div>';
+          return;
+        }
+        const maxScore = 4;
+        const rows = summary
+          .map(
+            (m, i) => `<tr>
+              <td class="rank">${i + 1}</td>
+              <td><span class="model-name">${escHtml(m.model)}</span></td>
+              <td class="num">${escHtml(m.thinkingLevels || "default")}</td>
+              <td style="min-width:180px">
+                <div class="score-bar-cell">
+                  <div class="score-bar-track">
+                    <div class="score-bar-fill" style="width:${((m.avgScore ?? 0) / maxScore) * 100}%;background:${colorFor(m.model, state.models)}"></div>
+                  </div>
+                  <span class="score-val ${scoreClass(m.avgScore)}">${fmt(m.avgScore, 2)}</span>
+                </div>
+              </td>
+              <td class="num">${fmtUsd(m.avgCost)}</td>
+              <td class="num">${fmt(m.medDuration, 1)}s</td>
+              <td class="num">${fmt(m.avgTps, 0)}</td>
+              <td class="num">${m.runs}</td>
+              <td class="num">${m.failures || "—"}</td>
+            </tr>`,
+          )
+          .join("");
+
+        qs("#leaderboard").innerHTML = `<table>
+          <thead><tr>
+            <th></th>
+            <th>Model</th>
+            <th class="num">Reasoning</th>
+            <th>Score</th>
+            <th class="num">Cost</th>
+            <th class="num">Wall Clock</th>
+            <th class="num">TPS</th>
+            <th class="num">Runs</th>
+            <th class="num">Fails</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      };
+
+      const scaleCanvas = (canvas) => {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { ctx, w: rect.width, h: rect.height };
+      };
+
+      const renderBar = (canvas, rows, formatFn) => {
+        const { ctx, w, h } = scaleCanvas(canvas);
+        ctx.clearRect(0, 0, w, h);
+        if (!rows.length) return;
+
+        const max = Math.max(...rows.map((r) => r.value), 0.001);
+        const padL = 8;
+        const padR = 8;
+        const padT = 24;
+        const padB = 80;
+        const usable = w - padL - padR;
+        const barW = Math.min(usable / rows.length, 64);
+        const totalW = barW * rows.length;
+        const offsetX = padL + (usable - totalW) / 2;
+
+        rows.forEach((row, i) => {
+          const barH = (row.value / max) * (h - padT - padB);
+          const x = offsetX + i * barW;
+          const y = h - padB - barH;
+
+          ctx.fillStyle = row.color;
+          const gap = Math.max(2, barW * 0.15);
+          ctx.beginPath();
+          const bx = x + gap;
+          const bw = barW - gap * 2;
+          const r = Math.min(3, bw / 2);
+          ctx.moveTo(bx + r, y);
+          ctx.lineTo(bx + bw - r, y);
+          ctx.quadraticCurveTo(bx + bw, y, bx + bw, y + r);
+          ctx.lineTo(bx + bw, h - padB);
+          ctx.lineTo(bx, h - padB);
+          ctx.lineTo(bx, y + r);
+          ctx.quadraticCurveTo(bx, y, bx + r, y);
+          ctx.fill();
+
+          ctx.fillStyle = "#e5e5e5";
+          ctx.font = "600 11px -apple-system, BlinkMacSystemFont, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            formatFn ? formatFn(row.value) : fmt(row.value, 2),
+            x + barW / 2,
+            y - 6,
+          );
+
+          ctx.fillStyle = "#737373";
+          ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+          const label = row.label;
+          ctx.save();
+          ctx.translate(x + barW / 2, h - padB + 6);
+          ctx.rotate(-Math.PI / 4);
+          ctx.textAlign = "right";
+          ctx.fillText(label, 0, 0);
+          ctx.restore();
+        });
+      };
+
+      const sortedRows = (summary, key, formatFn) =>
+        [...summary]
+          .filter((m) => m[key] !== null)
+          .sort((a, b) => (b[key] ?? 0) - (a[key] ?? 0))
+          .map((m) => ({
+            label: m.model,
+            value: m[key] ?? 0,
+            color: colorFor(m.model, state.models),
+          }));
+
+      const renderPrimaryCharts = (summary) => {
+        renderBar(qs("#score-chart"), sortedRows(summary, "avgScore"), (v) =>
+          fmt(v, 2),
+        );
+        renderBar(qs("#cost-chart"), sortedRows(summary, "avgCost"), (v) =>
+          fmtUsd(v),
+        );
+        renderBar(
+          qs("#duration-chart"),
+          sortedRows(summary, "medDuration"),
+          (v) => fmt(v, 1) + "s",
+        );
+        renderBar(qs("#tps-chart"), sortedRows(summary, "avgTps"), (v) =>
+          fmt(v, 0),
+        );
+      };
+
+      const renderSecondaryCharts = (summary) => {
+        renderBar(qs("#tool-chart"), sortedRows(summary, "avgToolCalls"), (v) =>
+          fmt(v, 1),
+        );
+        renderBar(
+          qs("#token-chart"),
+          sortedRows(summary, "avgOutTokens"),
+          (v) => fmt(v, 0),
+        );
+        renderBar(
+          qs("#input-token-chart"),
+          sortedRows(summary, "avgInTokens"),
+          (v) => fmt(v, 0),
+        );
+        renderBar(
+          qs("#disagreement-chart"),
+          sortedRows(summary, "avgDisagree"),
+          (v) => fmt(v, 2),
+        );
+      };
+
+      const renderPerTest = (records) => {
+        const tests = uniq(records.map((r) => r.testId)).sort();
+        const models = state.models;
+        qs("#test-count").textContent = tests.length;
+
+        if (!tests.length) {
+          qs("#per-test-table").innerHTML =
+            '<div class="empty-state">No tests</div>';
+          return;
+        }
+
+        const lookup = {};
+        for (const r of records) {
+          const key = `${r.testId}|||${r.model}`;
+          (lookup[key] ??= []).push(r);
+        }
+
+        const modelHeaders = models
+          .map((m) => `<th class="num">${escHtml(m)}</th>`)
+          .join("");
+        const rows = tests
+          .map((t) => {
+            const cells = models
+              .map((m) => {
+                const runs = lookup[`${t}|||${m}`] ?? [];
+                if (!runs.length) return '<td class="num">—</td>';
+                const s = avg(nums(runs.map(scoreVal)));
+                return `<td class="num ${scoreClass(s)}">${fmt(s, 2)}</td>`;
+              })
+              .join("");
+            return `<tr><td class="test-name">${escHtml(t)}</td>${cells}</tr>`;
+          })
+          .join("");
+
+        qs("#per-test-table").innerHTML = `<table>
+          <thead><tr><th>Test</th>${modelHeaders}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      };
+
+      const shortPath = (path) => {
+        if (!path) return "—";
+        const text = String(path);
+        return text.length > 48 ? `…${text.slice(-47)}` : text;
+      };
+
+      const renderRuns = (records) => {
+        qs("#runs-count").textContent = records.length;
+        const sorted = [...records].sort(
+          (a, b) =>
+            new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+        );
+        const rows = sorted
+          .map((r) => {
+            const raw = escHtml(JSON.stringify(r, null, 2));
+            return `<tr>
+              <td><span class="model-name">${escHtml(r.model)}</span><div class="answer-preview">${escHtml(r.provider ?? "")}${r.effectiveProvider ? ` / ${escHtml(r.effectiveProvider)}` : ""}${r.thinkingLevel ? ` / ${escHtml(r.thinkingLevel)}` : ""}</div></td>
+              <td class="test-name">${escHtml(r.testId)}</td>
+              <td class="num">${r.run ?? "—"}</td>
+              <td class="num ${scoreClass(scoreVal(r))}">${fmt(scoreVal(r), 1)}</td>
+              <td class="num">${fmt(clarityVal(r), 1)}</td>
+              <td class="num">${fmt(r.durationSec, 1)}s</td>
+              <td class="num">${fmt(r.timeToFirstModelDeltaMs, 0)}ms</td>
+              <td class="num">${fmt(tpsVal(r), 0)}</td>
+              <td class="num">${fmtUsd(costVal(r))}</td>
+              <td class="num">${r.toolCalls ?? "—"}</td>
+              <td class="num">${fmt(inTokens(r), 0)}</td>
+              <td class="num">${fmt(outTokens(r), 0)}</td>
+              <td class="num">${fmt(r.tokens?.total, 0)}</td>
+              <td class="answer-preview" title="${escHtml(r.localResourcePath ?? "")}">${escHtml(shortPath(r.localResourcePath))}</td>
+              <td>${r.error ? `<span class="error-tag">${escHtml(r.error)}</span>` : `<span class="answer-preview">${escHtml((r.answer ?? "").slice(0, 120))}</span>`}</td>
+              <td><details><summary>Data</summary><pre>${raw}</pre></details></td>
+            </tr>`;
+          })
+          .join("");
+
+        qs("#runs-table").innerHTML = `<table>
+          <thead><tr>
+            <th>Model</th><th>Test</th><th class="num">Run</th><th class="num">Score</th><th class="num">Clarity</th>
+            <th class="num">Wall Clock</th><th class="num">TTFD</th><th class="num">TPS</th><th class="num">Cost</th><th class="num">Tools</th>
+            <th class="num">Input</th><th class="num">Output</th><th class="num">Total</th><th>Resource</th><th>Result</th><th>Raw</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      };
+
+      const update = () => {
+        const records = allRecords();
+        const summary = buildModelSummary(records);
+        renderTopStats(records);
+        renderLeaderboard(summary);
+        renderPrimaryCharts(summary);
+        renderSecondaryCharts(summary);
+        renderPerTest(records);
+        renderRuns(records);
+        qs("#test-count").textContent = uniq(
+          records.map((r) => r.testId),
+        ).length;
+        qs("#runs-count").textContent = records.length;
+      };
+
+      const loadResults = async (file) => {
+        const data = await api.results(file);
+        state.records = data.records ?? [];
+        state.file = data.file ?? null;
+        state.models = uniq(state.records.map((r) => r.model));
+        update();
+      };
+
+      const init = async () => {
+        const data = await api.files();
+        state.files = data.files ?? [];
+        if (!state.files.length) {
+          qs("#top-stats").innerHTML =
+            '<div class="empty-state">No results files found.</div>';
+          return;
+        }
+
+        const select = qs("#file-select");
+        select.innerHTML = state.files
+          .map((f) => `<option value="${f.name}">${f.name}</option>`)
+          .join("");
+        select.addEventListener("change", (e) => loadResults(e.target.value));
+
+        state.file = state.files[0].name;
+        await loadResults(state.file);
+
+        window.addEventListener("resize", update);
+      };
+
+      init();
+    </script>
+  </body>
+</html>
