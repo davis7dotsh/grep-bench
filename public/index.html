@@ -593,13 +593,26 @@
     </div>
 
     <script type="module">
-      const api = {
-        files: () => fetch("/api/files").then((r) => r.json()),
-        results: (file) =>
-          fetch(`/api/results?file=${encodeURIComponent(file ?? "")}`).then(
-            (r) => r.json(),
-          ),
-      };
+      const embeddedData = JSON.parse(
+        document.getElementById("grep-bench-data")?.textContent ?? "null",
+      );
+
+      const api = embeddedData
+        ? {
+            files: async () => ({ files: embeddedData.files }),
+            results: async (file) =>
+              embeddedData.resultsByFile[file] ??
+              embeddedData.resultsByFile[embeddedData.files[0]?.name] ?? {
+                error: "No results found.",
+              },
+          }
+        : {
+            files: () => fetch("/api/files").then((r) => r.json()),
+            results: (file) =>
+              fetch(`/api/results?file=${encodeURIComponent(file ?? "")}`).then(
+                (r) => r.json(),
+              ),
+          };
 
       const qs = (sel, root = document) => root.querySelector(sel);
       const qsa = (sel, root = document) =>

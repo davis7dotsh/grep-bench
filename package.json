@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "bench": "bun run src/bench.ts",
+    "build": "bun run scripts/build-site.ts",
     "check": "tsc -p tsconfig.json --noEmit",
     "format": "prettier -w ."
   },
