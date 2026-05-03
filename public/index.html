@@ -650,6 +650,12 @@
         models: [],
       };
 
+      const latestFile = (files) =>
+        [...files].sort(
+          (a, b) =>
+            new Date(b.mtime ?? 0).getTime() - new Date(a.mtime ?? 0).getTime(),
+        )[0];
+
       const scoreVal = (r) => r.judge?.score ?? null;
       const clarityVal = (r) => r.judge?.clarity ?? null;
       const outTokens = (r) => r.tokens?.output ?? null;
@@ -1003,8 +1009,10 @@
       const loadResults = async (file) => {
         const data = await api.results(file);
         state.records = data.records ?? [];
-        state.file = data.file ?? null;
+        state.file = data.file ?? file ?? null;
         state.models = uniq(state.records.map((r) => r.model));
+        const select = qs("#file-select");
+        if (select && state.file) select.value = state.file;
         update();
       };
 
@@ -1023,7 +1031,8 @@
           .join("");
         select.addEventListener("change", (e) => loadResults(e.target.value));
 
-        state.file = state.files[0].name;
+        state.file = latestFile(state.files).name;
+        select.value = state.file;
         await loadResults(state.file);
 
         window.addEventListener("resize", update);
